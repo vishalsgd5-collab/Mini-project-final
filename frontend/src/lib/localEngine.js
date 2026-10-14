@@ -190,6 +190,7 @@ function overview() {
       fatigue_score: avg(scores),
       peak_fatigue: scores.length ? Math.max(...scores) : 0,
       blink_rate: avg(blinks),
+      typing_wpm: avg(todayR.map((r) => (r.typing_rpm || 0) / 5)),
       screen_minutes: +screen.toFixed(1),
       detections: todayR.filter((r) => r.fatigue_score >= 50).length,
       breaks: todayE.filter((e) => e.status === "completed").length,
@@ -264,6 +265,7 @@ export function localApi(path, { method = "GET", body } = {}) {
         perclos: body.perclos,
         avg_ear: body.avg_ear,
         continuous_screen_min: body.continuous_screen_min,
+        typing_rpm: body.typing_rpm,
       });
     }
     const last = [...db.events].reverse().find((e) => e.status === "completed");

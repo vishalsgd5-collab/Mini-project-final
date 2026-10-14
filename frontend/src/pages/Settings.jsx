@@ -50,8 +50,16 @@ export default function Settings() {
           <li>Click Enable desktop alerts below, and Allow the camera on Live iris</li>
           <li>Keep that tab open (minimized is fine). Rituals then appear on YouTube, Gmail, docs — and as a Windows toast over Word or Zoom</li>
         </ol>
-        <button className="btn btn-gold" type="button" onClick={() => enableAlerts()}>
-          Enable desktop alerts
+        <button
+          className="btn btn-gold"
+          type="button"
+          onClick={async () => {
+            const { testWindowsAlert } = await import("../lib/notify");
+            const ok = await testWindowsAlert();
+            if (!ok) window.alert("Allow notifications in Chrome (address-bar lock icon) and Windows Settings → Notifications → Google Chrome.");
+          }}
+        >
+          Test Windows popup
         </button>
       </div>
 

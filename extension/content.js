@@ -1,5 +1,23 @@
 (function () {
-  const BRIDGE = "AURA_RITUAL";
+  const keyTimes = [];
+  window.addEventListener(
+    "keydown",
+    () => {
+      const now = Date.now();
+      keyTimes.push(now);
+      while (keyTimes.length && now - keyTimes[0] > 60000) keyTimes.shift();
+      const rpm = keyTimes.length;
+      const wpm = Math.round(rpm / 5);
+      try {
+        chrome.runtime.sendMessage({ type: "AURA_TYPING", rpm, wpm });
+      } catch {
+        /* ignore */
+      }
+      window.postMessage({ type: "AURA_TYPING", rpm, wpm }, "*");
+    },
+    true
+  );
+
 
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
@@ -14,6 +32,9 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "AURA_RITUAL" && msg.item) showOverlay(msg.item);
+    if (msg?.type === "AURA_TYPING") {
+      window.postMessage({ type: "AURA_TYPING", rpm: msg.rpm, wpm: msg.wpm }, "*");
+    }
   });
 
   function showOverlay(item) {

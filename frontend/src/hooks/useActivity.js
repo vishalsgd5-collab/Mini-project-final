@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 export function useActivity(enabled) {
   const [stats, setStats] = useState({
     typingRpm: 0,
+    typingWpm: 0,
     mouseIntensity: 0,
     idleRatio: 0,
     lookAwayRatio: 0,
@@ -36,7 +37,8 @@ export function useActivity(enabled) {
       }
     };
 
-    window.addEventListener("keydown", onKey, { passive: true });
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keypress", onKey, true);
     window.addEventListener("mousemove", onMove, { passive: true });
     document.addEventListener("visibilitychange", onVis);
 
@@ -51,6 +53,7 @@ export function useActivity(enabled) {
       const windowMs = 60000;
       setStats({
         typingRpm: keys.current.length,
+        typingWpm: Math.round(keys.current.length / 5),
         mouseIntensity: Math.min(1, moves.current.length / 180),
         idleRatio: Math.min(1, idleMs.current / windowMs),
         lookAwayRatio: Math.min(1, hiddenMs.current / windowMs),
@@ -60,7 +63,8 @@ export function useActivity(enabled) {
     }, 1000);
 
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keypress", onKey, true);
       window.removeEventListener("mousemove", onMove);
       document.removeEventListener("visibilitychange", onVis);
       clearInterval(id);

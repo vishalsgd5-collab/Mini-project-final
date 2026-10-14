@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { enableAlerts, pushRitual } from "../lib/notify";
+import { enableAlerts, pushRitual, pushWindows, testWindowsAlert } from "../lib/notify";
 import Gauge from "../components/Gauge";
 import Wave from "../components/Wave";
 import { Offer, Ritual } from "../components/Intervention";
@@ -61,6 +61,11 @@ export default function Monitor() {
   const [offer, setOffer] = useState(null);
   const [ritual, setRitual] = useState(null);
   const [ears, setEars] = useState([]);
+  const [alertState, setAlertState] = useState(
+    typeof Notification !== "undefined" ? Notification.permission : "denied"
+  );
+  const [extTyping, setExtTyping] = useState({ wpm: 0, rpm: 0 });
+  const lastFatiguePing = useRef(0);
   const startedAt = useRef(performance.now());
   const lastBreak = useRef(0);
   const busy = useRef(false);
@@ -94,6 +99,12 @@ export default function Monitor() {
       }
     };
     document.addEventListener("visibilitychange", onVis);
+    const onTypeMsg = (e) => {
+      if (e.data?.type === "AURA_TYPING") {
+        setExtTyping({ wpm: e.data.wpm || 0, rpm: e.data.rpm || 0 });
+      }
+    };
+    window.addEventListener("message", onTypeMsg);
     let id;
     (async () => {
       const s = await api("/api/sessions/start", { method: "POST" });
@@ -103,6 +114,7 @@ export default function Monitor() {
     startedAt.current = performance.now();
     return () => {
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("message", onTypeMsg);
       try {
         lock?.release?.();
       } catch {
@@ -156,6 +168,16 @@ export default function Monitor() {
         if (out.intervention && !offerRef.current && !ritualRef.current && performance.now() - lastBreak.current > 20000) {
           setOffer(out.intervention);
           pushRitual(out.intervention);
+        } else if (
+          out.fatigue_score >= 52 &&
+          performance.now() - lastFatiguePing.current > 120000
+        ) {
+          lastFatiguePing.current = performance.now();
+          pushWindows(
+            `AURA · fatigue ${Math.round(out.fatigue_score)} (${out.level})`,
+            "Windows toast: take a short pause. This alert is from your live session, not only the website.",
+            "aura-fatigue"
+          );
         }
       } catch (err) {
         console.warn(err);
@@ -193,7 +215,18 @@ export default function Monitor() {
           <p>Leave this tab open for background care. Graphs only store a live camera lock — not lab mode.</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button className="btn btn-ghost" onClick={() => enableAlerts()}>Enable desktop alerts</button>
+          <button
+            className="btn btn-gold"
+            onClick={async () => {
+              const ok = await testWindowsAlert();
+              setAlertState(typeof Notification !== "undefined" ? Notification.permission : "denied");
+              if (!ok) {
+                window.alert("Allow notifications for this site in Chrome (lock icon in the address bar), and in Windows Settings → System → Notifications → Google Chrome.");
+              }
+            }}
+          >
+            Test Windows popup
+          </button>
           <button className={running ? "btn btn-danger" : "btn btn-gold"} onClick={() => setRunning((v) => !v)}>
             {running ? "Pause" : "Resume"}
           </button>
@@ -239,8 +272,10 @@ export default function Monitor() {
             <div className="metric"><small>PERCLOS</small><b>{(((live?.perclos || 0) * 100).toFixed(0))}%</b></div>
             <div className="metric"><small>Head pitch</small><b>{(live?.pitch || 0).toFixed(0)}°</b></div>
             <div className="metric"><small>Slouch</small><b>{(((live?.slouch || 0) * 100).toFixed(0))}%</b></div>
-            <div className="metric"><small>Typing</small><b>{activity.typingRpm}</b></div>
+            <div className="metric"><small>Typing speed</small><b>{Math.max(activity.typingWpm || 0, extTyping.wpm || 0)} WPM</b></div>
+            <div className="metric"><small>Keys / min</small><b>{Math.max(activity.typingRpm || 0, extTyping.rpm || 0)}</b></div>
             <div className="metric"><small>Session</small><b>{(((performance.now() - startedAt.current) / 60000).toFixed(0))}m</b></div>
+            <div className="metric"><small>Windows alerts</small><b>{alertState === "granted" ? "ON" : "OFF"}</b></div>
           </div>
           <div className="drivers">
             {(pred?.drivers || []).map((d) => (

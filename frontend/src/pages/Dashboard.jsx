@@ -88,6 +88,7 @@ export default function Dashboard() {
           <div className="card kpi"><small>Fatigue today</small><b>{empty ? "—" : t.fatigue_score}</b><em>peak {empty ? "—" : t.peak_fatigue}</em></div>
           <div className="card kpi"><small>Screen</small><b>{empty ? "—" : `${Math.round(t.screen_minutes)}m`}</b><em>{t.samples} live samples</em></div>
           <div className="card kpi"><small>Blink rate</small><b>{empty ? "—" : t.blink_rate}</b><em>/ minute</em></div>
+          <div className="card kpi"><small>Typing speed</small><b>{empty ? "—" : Math.round(t.typing_wpm || 0)}</b><em>WPM from live keys</em></div>
           <div className="card kpi"><small>Breaks</small><b>{t.breaks}</b><em>{t.skipped} skipped · {t.detections} detections</em></div>
         </div>
       </div>
