@@ -1,3 +1,5 @@
+import { localApi } from "./lib/localEngine";
+
 const TOKEN_KEY = "aura_token";
 
 export function getToken() {
@@ -9,7 +11,7 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
-export async function api(path, { method = "GET", body, auth = true } = {}) {
+async function remoteApi(path, { method = "GET", body, auth = true } = {}) {
   const headers = { "Content-Type": "application/json" };
   if (auth && getToken()) headers.Authorization = `Bearer ${getToken()}`;
   const res = await fetch(path, {
@@ -23,4 +25,12 @@ export async function api(path, { method = "GET", body, auth = true } = {}) {
     throw new Error(typeof message === "string" ? message : JSON.stringify(message));
   }
   return data;
+}
+
+export async function api(path, opts = {}) {
+  try {
+    return await remoteApi(path, opts);
+  } catch {
+    return localApi(path, opts);
+  }
 }
