@@ -1,6 +1,9 @@
 /** MediaPipe Face Mesh indices — aligned with backend/app/ml/ear.py */
 export const LEFT_EYE = [33, 160, 158, 133, 153, 144];
 export const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
+/** Denser lids — more stable when spectacle frames hide a corner. */
+export const LEFT_EYE_DENSE = [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7];
+export const RIGHT_EYE_DENSE = [362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382];
 export const MOUTH = [61, 81, 311, 291, 178, 402];
 export const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
@@ -70,27 +73,62 @@ export class BlinkTracker {
     this.closedFrames = 0;
     this.inBlink = false;
     this.times = [];
-    this.closedMs = [];
-    this.windowStart = performance.now();
     this.earHistory = [];
+    this.openSamples = [];
+    this.openBaseline = 0.28;
+    this.glasses = false;
+    this.glassesLikely = false;
+    this.calibrateUntil = 0;
   }
 
-  push(ear, now = performance.now()) {
-    this.earHistory.push({ t: now, ear });
+  setGlasses(on) {
+    this.glasses = !!on;
+  }
+
+  startCalibrate(ms = 3000) {
+    this.calibrateUntil = performance.now() + ms;
+    this.openSamples = [];
+  }
+
+  /**
+   * Adaptive blink detector.
+   * Glasses shrink apparent EAR, so we close relative to *this face's* open baseline
+   * and fuse MediaPipe eyeBlink blendshapes (trained on spectacles).
+   */
+  push(ear, now = performance.now(), blinkScore = 0) {
+    this.earHistory.push({ t: now, ear, blinkScore });
     const cutoff = now - 60000;
     this.earHistory = this.earHistory.filter((s) => s.t >= cutoff);
     this.times = this.times.filter((t) => t >= cutoff);
 
-    const closed = ear < EAR_THRESH;
+    const lookingOpen = blinkScore < 0.28;
+    if (lookingOpen && ear > 0.08) {
+      this.openSamples.push(ear);
+      if (this.openSamples.length > 90) this.openSamples.shift();
+    }
+    if (this.openSamples.length >= 12) {
+      const sorted = [...this.openSamples].sort((a, b) => a - b);
+      this.openBaseline = sorted[Math.floor(sorted.length * 0.7)];
+    }
+    if (this.openBaseline < 0.22 && blinkScore < 0.25 && this.openSamples.length > 20) {
+      this.glassesLikely = true;
+    }
+
+    const glasses = this.glasses || this.glassesLikely;
+    const drop = glasses ? 0.78 : 0.72;
+    const blendThresh = glasses ? 0.38 : 0.5;
+    const adaptiveClosed = ear < Math.max(0.12, this.openBaseline * drop);
+    const blendClosed = blinkScore >= blendThresh;
+    const closed = glasses ? blendClosed || adaptiveClosed : adaptiveClosed || (blendClosed && ear < this.openBaseline * 0.85);
+
     let blinked = false;
+    const minClosed = glasses ? 1 : 2;
+    const maxClosed = glasses ? 22 : 18;
     if (closed) {
       this.closedFrames += 1;
-      if (this.closedFrames >= 2 && !this.inBlink) {
-        this.inBlink = true;
-        this.blinkOpen = now;
-      }
+      if (this.closedFrames >= minClosed && !this.inBlink) this.inBlink = true;
     } else {
-      if (this.inBlink && this.closedFrames >= 2 && this.closedFrames < 18) {
+      if (this.inBlink && this.closedFrames >= minClosed && this.closedFrames < maxClosed) {
         this.times.push(now);
         blinked = true;
       }
@@ -100,7 +138,10 @@ export class BlinkTracker {
 
     const span = Math.max(1, (now - (this.earHistory[0]?.t || now)) / 1000);
     const blinkRate = (this.times.length / span) * 60;
-    const closedSamples = this.earHistory.filter((s) => s.ear < EAR_THRESH).length;
+    const closedSamples = this.earHistory.filter((s) => {
+      const t = glasses ? 0.38 : 0.5;
+      return s.ear < Math.max(0.12, this.openBaseline * drop) || (s.blinkScore || 0) >= t;
+    }).length;
     const perclos = this.earHistory.length ? closedSamples / this.earHistory.length : 0;
     const ears = this.earHistory.map((s) => s.ear);
     const mean = ears.reduce((a, b) => a + b, 0) / Math.max(1, ears.length);
@@ -113,6 +154,11 @@ export class BlinkTracker {
       avgEar: mean,
       earStd: Math.sqrt(variance),
       blinks: this.times.length,
+      openBaseline: this.openBaseline,
+      glassesLikely: glasses,
+      blinkScore,
+      closed,
+      calibrating: now < this.calibrateUntil,
     };
   }
 }
@@ -170,7 +216,7 @@ export function drawOverlay(ctx, w, h, landmarks, ear, pose) {
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
-    const closed = value < EAR_THRESH;
+    const closed = ear.closed ?? value < Math.max(0.12, (ear.openBaseline || 0.28) * 0.75);
     ctx.strokeStyle = closed ? "rgba(224, 138, 106, 0.95)" : "rgba(143, 184, 154, 0.9)";
     ctx.lineWidth = 1.6;
     ctx.stroke();

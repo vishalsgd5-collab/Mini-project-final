@@ -48,11 +48,13 @@ export default function Monitor() {
   const canvasRef = useRef(null);
   const [running, setRunning] = useState(true);
   const [retryToken, setRetryToken] = useState(0);
-  const { status, error, live: camLive } = useFaceMesh({
+  const [glassesMode, setGlassesMode] = useState(() => localStorage.getItem("aura_glasses") === "1");
+  const { status, error, live: camLive, calibrate } = useFaceMesh({
     videoRef,
     canvasRef,
     enabled: running && user?.enable_camera !== false,
     retryToken,
+    glassesMode,
   });
   const labLive = useLabLive(running && status === "lab");
   const live = status === "lab" ? labLive : camLive;
@@ -310,6 +312,23 @@ export default function Monitor() {
             Sound {sound ? "on" : "off"}
           </button>
           <button
+            className={glassesMode ? "btn btn-gold" : "btn btn-ghost"}
+            onClick={() => {
+              const next = !glassesMode;
+              setGlassesMode(next);
+              localStorage.setItem("aura_glasses", next ? "1" : "0");
+              calibrate();
+            }}
+          >
+            {glassesMode ? "Glasses mode on" : "I wear glasses"}
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={() => calibrate()}
+          >
+            Calibrate eyes
+          </button>
+          <button
             className={running ? "btn btn-danger" : "btn btn-gold"}
             onClick={() => {
               if (running) {
@@ -389,9 +408,15 @@ export default function Monitor() {
               <span className={`pill ${status === "live" ? "live" : status === "lab" ? "lab" : ""}`}>{hud}</span>
               <span className="pill">
                 {live?.present ? "face locked" : "searching"} · EAR {(live?.ear || 0).toFixed(2)}
+                {live?.glassesLikely || glassesMode ? " · glasses-aware" : ""}
+                {live?.calibrating ? " · calibrating open eyes…" : ""}
               </span>
             </div>
           </div>
+          <p className="muted" style={{ marginTop: 10, fontSize: 13 }}>
+            Spectacles: turn on <b>I wear glasses</b>, sit still with eyes open, then hit <b>Calibrate eyes</b> (3 seconds).
+            AURA uses your personal open-eye baseline plus MediaPipe blink blendshapes, not a one-size EAR cutoff.
+          </p>
           <div style={{ marginTop: 14 }}>
             <Wave values={ears} />
           </div>
@@ -405,6 +430,8 @@ export default function Monitor() {
           <div className="metrics">
             <div className="metric"><small>Blinks / min</small><b>{(live?.blinkRate || 0).toFixed(0)}</b></div>
             <div className="metric"><small>PERCLOS</small><b>{(((live?.perclos || 0) * 100).toFixed(0))}%</b></div>
+            <div className="metric"><small>Lid close (AI)</small><b>{(((live?.blinkScore || 0) * 100).toFixed(0))}%</b></div>
+            <div className="metric"><small>Your open EAR</small><b>{(live?.openBaseline || 0).toFixed(2)}</b></div>
             <div className="metric"><small>Head pitch</small><b>{(live?.pitch || 0).toFixed(0)}°</b></div>
             <div className="metric"><small>Slouch</small><b>{(((live?.slouch || 0) * 100).toFixed(0))}%</b></div>
             <div className="metric"><small>Typing speed</small><b>{Math.max(activity.typingWpm || 0, extTyping.wpm || 0)} WPM</b></div>

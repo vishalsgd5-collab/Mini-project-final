@@ -50,7 +50,15 @@ async function openCamera() {
   throw last || new Error("Camera unavailable");
 }
 
-export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
+function blendScore(result) {
+  const cats = result.faceBlendshapes?.[0]?.categories || [];
+  const pick = (name) => cats.find((c) => c.categoryName === name)?.score || 0;
+  return (pick("eyeBlinkLeft") + pick("eyeBlinkRight")) / 2;
+}
+
+export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false }) {
+  const glassesRef = useRef(glassesMode);
+  glassesRef.current = glassesMode;
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [live, setLive] = useState({
@@ -120,7 +128,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
         const options = {
           runningMode: "VIDEO",
           numFaces: 1,
-          outputFaceBlendshapes: false,
+          outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
         };
         let lm;
@@ -171,13 +179,17 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
           canvas.height = video.videoHeight || 480;
         }
         if (face) {
+          blinker.current.setGlasses(glassesRef.current);
           const ear = bothEars(face);
           const mar = mouthAspect(face);
+          const bscore = blendScore(result);
           const matrix = result.facialTransformationMatrixes?.[0]?.data;
           const pose = matrix ? poseFromMatrix(matrix) : poseFromLandmarks(face);
-          const blink = blinker.current.push(ear.avg, now);
+          const blink = blinker.current.push(ear.avg, now, bscore);
           const yawns = yawner.current.push(mar, now);
-          if (ctx) drawOverlay(ctx, canvas.width, canvas.height, face, ear, pose);
+          if (ctx) {
+            drawOverlay(ctx, canvas.width, canvas.height, face, { ...ear, closed: blink.closed, openBaseline: blink.openBaseline }, pose);
+          }
           frames.current += 1;
           let fps = 0;
           if (now - fpsAt.current > 1000) {
@@ -201,6 +213,11 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
             present: true,
             blinks: blink.blinks,
             fps: fps || s.fps,
+            blinkScore: bscore,
+            openBaseline: blink.openBaseline,
+            glassesLikely: blink.glassesLikely,
+            calibrating: blink.calibrating,
+            closed: blink.closed,
           }));
         } else if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -219,5 +236,9 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, retryToken]);
 
-  return { status, error, live, stop };
+  const calibrate = useCallback(() => {
+    blinker.current.startCalibrate(3500);
+  }, []);
+
+  return { status, error, live, stop, calibrate };
 }
