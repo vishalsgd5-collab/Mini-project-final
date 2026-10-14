@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { enableAlerts, pushRitual, pushWindows, testWindowsAlert } from "../lib/notify";
-import { isSoundOn, playFatigueBeep, playRitualChime, setSoundOn, unlockAudio } from "../lib/sound";
+import { isSoundOn, playAlarmBeep, playFatigueBeep, playRitualChime, setSoundOn, unlockAudio } from "../lib/sound";
 import Gauge from "../components/Gauge";
 import Wave from "../components/Wave";
 import { Offer, Ritual } from "../components/Intervention";
@@ -74,6 +74,8 @@ export default function Monitor() {
   const [flash, setFlash] = useState(false);
   const [fatigueHold, setFatigueHold] = useState(0);
   const [recap, setRecap] = useState(null);
+  const [awaySec, setAwaySec] = useState(0);
+  const [alarmOn, setAlarmOn] = useState(false);
   const lastFatiguePing = useRef(0);
   const fatigueSince = useRef(null);
   const lastBeep = useRef(0);
@@ -96,6 +98,38 @@ export default function Monitor() {
   predRef.current = pred;
   const runningRef = useRef(running);
   runningRef.current = running;
+  const alarmOnRef = useRef(false);
+  const absentSince = useRef(null);
+  const beepLoop = useRef(null);
+  const pipOnce = useRef(false);
+
+  function startAwayAlarm() {
+    if (alarmOnRef.current) return;
+    alarmOnRef.current = true;
+    setAlarmOn(true);
+    unlockAudio();
+    playAlarmBeep();
+    pushWindows(
+      "AURA · away from camera 5 minutes",
+      "No face in view. Click Stop alarm on Live iris to silence this. It will not stop by itself.",
+      "aura-away"
+    );
+    beepLoop.current = window.setInterval(() => {
+      playAlarmBeep();
+    }, 1400);
+  }
+
+  function stopAwayAlarm() {
+    alarmOnRef.current = false;
+    setAlarmOn(false);
+    if (beepLoop.current) {
+      window.clearInterval(beepLoop.current);
+      beepLoop.current = null;
+    }
+    absentSince.current = liveRef.current?.present ? null : performance.now();
+    setAwaySec(0);
+    setHint("Alarm stopped. 5-minute away timer reset.");
+  }
 
   useEffect(() => {
     enableAlerts();
@@ -109,10 +143,8 @@ export default function Monitor() {
     }
     wake();
     const onVis = () => {
-      if (!document.hidden) {
-        videoRef.current?.play?.().catch(() => {});
-        wake();
-      }
+      videoRef.current?.play?.().catch(() => {});
+      if (!document.hidden) wake();
     };
     document.addEventListener("visibilitychange", onVis);
     const onTypeMsg = (e) => {
@@ -170,6 +202,7 @@ export default function Monitor() {
           body: { session_id: id, screen_minutes: minutes, blink_total: blinkTotal.current },
         }).catch(() => {});
       }
+      if (beepLoop.current) window.clearInterval(beepLoop.current);
     };
   }, []);
 
@@ -202,7 +235,32 @@ export default function Monitor() {
       } else {
         fatigueSince.current = null;
         setFatigueHold(0);
-        document.title = "AURA — Fatigue Detection";
+        if (!alarmOnRef.current) document.title = "AURA — Fatigue Detection";
+      }
+
+      const liveCam = statusRef.current === "live";
+      const present = !!liveRef.current?.present;
+      if (liveCam && runningRef.current && !present) {
+        if (!absentSince.current) absentSince.current = performance.now();
+        const gone = (performance.now() - absentSince.current) / 1000;
+        setAwaySec(gone);
+        if (gone >= 300 && !alarmOnRef.current) {
+          alarmOnRef.current = true;
+          setAlarmOn(true);
+          unlockAudio();
+          playAlarmBeep();
+          document.title = "AURA · AWAY ALARM";
+          pushWindows(
+            "AURA · away from camera 5 minutes",
+            "No face in view. Open Live iris and click Stop alarm — it will not silence itself.",
+            "aura-away"
+          );
+          if (beepLoop.current) window.clearInterval(beepLoop.current);
+          beepLoop.current = window.setInterval(() => playAlarmBeep(), 1400);
+        }
+      } else if (present && !alarmOnRef.current) {
+        absentSince.current = null;
+        setAwaySec(0);
       }
     }, 400);
     return () => clearInterval(id);
@@ -269,6 +327,24 @@ export default function Monitor() {
     return () => clearInterval(id);
   }, [running, sessionId, user]);
 
+  useEffect(() => {
+    if (status !== "live" || pipOnce.current || !videoRef.current?.srcObject) return undefined;
+    pipOnce.current = true;
+    startGuardian({
+      video: videoRef.current,
+      getHud: () => ({
+        score: Math.round(predRef.current?.fatigue_score ?? 0),
+        level: predRef.current?.level || "alert",
+        line: liveRef.current?.present
+          ? `${Math.round(liveRef.current?.attention ?? 100)} attention · tracking over other apps`
+          : "NO FACE — away timer running",
+      }),
+    }).catch(() => {
+      pipOnce.current = false;
+    });
+    return undefined;
+  }, [status]);
+
   async function feedback(status, extra = {}) {
     const eventId = (ritual || offer)?.event_id;
     if (eventId) {
@@ -293,7 +369,8 @@ export default function Monitor() {
           <h1>Live iris</h1>
           <p>
             <b>F8</b> mutes the beep (Windows toasts stay on). <b>Esc</b> snoozes 5 minutes.
-            Leave this tab open so the camera can run.
+            Leave this tab open (or use Float over apps) so the camera watches you on other sites.
+            If you leave the frame for 5 minutes, a constant alarm starts until you click Stop alarm.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -404,6 +481,35 @@ export default function Monitor() {
         </div>
       )}
       {flash && <div className="beep-flash" />}
+      {alarmOn && (
+        <div className="overlay alarm-overlay">
+          <div className="ritual">
+            <div className="cat">away alarm</div>
+            <h2>No face for 5 minutes</h2>
+            <p className="cue">This beep will not stop until you press the button.</p>
+            <p className="muted">Sit in front of the camera, then silence it here. F8 will not mute this alarm.</p>
+            <div className="overlay-actions">
+              <button
+                className="btn btn-gold"
+                onClick={() => {
+                  unlockAudio();
+                  stopAwayAlarm();
+                }}
+              >
+                Stop alarm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {status === "live" && awaySec >= 8 && !alarmOn && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "var(--coral)" }}>
+          <strong>
+            Out of sight {Math.floor(awaySec / 60)}:{String(Math.floor(awaySec % 60)).padStart(2, "0")} / 5:00
+          </strong>
+          <p className="muted">If no face is seen for 5 minutes, a constant alarm starts. Only Stop alarm turns it off.</p>
+        </div>
+      )}
       {hint && (
         <div className="card" style={{ marginBottom: 14 }}>
           <strong>{hint}</strong>

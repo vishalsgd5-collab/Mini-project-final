@@ -143,3 +143,17 @@ export function playRitualChime() {
   playOsc(523, 0, 0.18);
   playOsc(659, 0.14, 0.24);
 }
+
+/** Away-from-desk alarm — ignores F8 mute. Only a Stop button should halt it. */
+export function playAlarmBeep() {
+  unlockAudio();
+  try {
+    playWav(880, 0.28, 0);
+    playWav(698, 0.32, 260);
+    playOsc(880, 0, 0.28);
+    playOsc(698, 0.26, 0.32);
+    return true;
+  } catch {
+    return false;
+  }
+}
