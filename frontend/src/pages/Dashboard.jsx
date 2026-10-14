@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -26,17 +27,33 @@ export default function Dashboard() {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    api("/api/dashboard/overview")
-      .then(setData)
-      .catch((e) => setErr(e.message));
+    let on = true;
+    async function load() {
+      try {
+        const d = await api("/api/dashboard/overview");
+        if (on) setData(d);
+      } catch (e) {
+        if (on) setErr(e.message);
+      }
+    }
+    load();
+    const id = setInterval(load, 4000);
+    return () => {
+      on = false;
+      clearInterval(id);
+    };
   }, []);
 
   if (err) return <div className="center">{err}</div>;
-  if (!data) return <div className="center">Gathering the week…</div>;
+  if (!data) return <div className="center">Waiting for live samples…</div>;
 
   const t = data.today;
-  const hourly = data.hourly.filter((h) => h.score !== null);
-  const timeline = data.timeline.map((p, i) => ({ i, ...p }));
+  const timeline = data.timeline.map((p, i) => ({
+    i,
+    score: p.score ?? p.fatigue_score ?? 0,
+    blink: p.blink_rate ?? 0,
+  }));
+  const empty = !t.samples;
 
   return (
     <>
@@ -45,46 +62,100 @@ export default function Dashboard() {
           <h1>Daily pulse</h1>
           <p>{data.insight}</p>
         </div>
+        <span className="pill live">live camera only</span>
       </div>
+
+      {empty && (
+        <div className="card" style={{ marginBottom: 18 }}>
+          <h3>No webcam samples yet</h3>
+          <p className="muted">
+            Graphs, wellness index and break counts stay at zero until Live iris
+            locks onto your face. Lab-mode simulation is never written here.
+          </p>
+          <div style={{ marginTop: 14 }}>
+            <Link className="btn btn-gold" to="/app/monitor">Open Live iris</Link>
+          </div>
+        </div>
+      )}
 
       <div className="dash-hero">
         <div className="wellness">
           <small className="muted" style={{ letterSpacing: "0.16em", textTransform: "uppercase" }}>Wellness index</small>
-          <div><b>{t.wellness}</b></div>
-          <p className="muted" style={{ marginTop: 8 }}>A composite of fatigue, blinks, breaks honoured and screen load.</p>
+          <div><b>{empty ? "—" : t.wellness}</b></div>
+          <p className="muted" style={{ marginTop: 8 }}>Built only from your blinks, posture, screen time and completed pauses.</p>
         </div>
         <div className="kpis">
-          <div className="card kpi"><small>Fatigue today</small><b>{t.fatigue_score}</b><em>peak {t.peak_fatigue}</em></div>
-          <div className="card kpi"><small>Screen</small><b>{Math.round(t.screen_minutes)}m</b><em>{t.samples} samples</em></div>
-          <div className="card kpi"><small>Blink rate</small><b>{t.blink_rate}</b><em>/ minute</em></div>
+          <div className="card kpi"><small>Fatigue today</small><b>{empty ? "—" : t.fatigue_score}</b><em>peak {empty ? "—" : t.peak_fatigue}</em></div>
+          <div className="card kpi"><small>Screen</small><b>{empty ? "—" : `${Math.round(t.screen_minutes)}m`}</b><em>{t.samples} live samples</em></div>
+          <div className="card kpi"><small>Blink rate</small><b>{empty ? "—" : t.blink_rate}</b><em>/ minute</em></div>
           <div className="card kpi"><small>Breaks</small><b>{t.breaks}</b><em>{t.skipped} skipped · {t.detections} detections</em></div>
         </div>
       </div>
 
       <div className="card chart-card">
-        <h3>Fatigue score over the session</h3>
+        <h3>Fatigue score · live camera</h3>
         <div style={{ height: 240 }}>
-          <ResponsiveContainer>
-            <AreaChart data={timeline}>
-              <defs>
-                <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#d4b37a" stopOpacity={0.45} />
-                  <stop offset="100%" stopColor="#d4b37a" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid stroke="rgba(212,179,122,0.08)" vertical={false} />
-              <XAxis dataKey="i" hide />
-              <YAxis domain={[0, 100]} stroke="#c5d5cc" tick={{ fill: "#c5d5cc", fontSize: 11 }} />
-              <Tooltip {...tip} />
-              <Area type="monotone" dataKey="score" stroke="#d4b37a" fill="url(#g)" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
+          {timeline.length < 2 ? (
+            <p className="muted">The line appears after two real face samples.</p>
+          ) : (
+            <ResponsiveContainer>
+              <AreaChart data={timeline}>
+                <defs>
+                  <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#d4b37a" stopOpacity={0.45} />
+                    <stop offset="100%" stopColor="#d4b37a" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="rgba(212,179,122,0.08)" vertical={false} />
+                <XAxis dataKey="i" hide />
+                <YAxis domain={[0, 100]} stroke="#c5d5cc" tick={{ fill: "#c5d5cc", fontSize: 11 }} />
+                <Tooltip {...tip} />
+                <Area type="monotone" dataKey="score" stroke="#d4b37a" fill="url(#g)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
       <div className="two">
         <div className="card chart-card">
-          <h3>Seven-day load</h3>
+          <h3>Blink rate · live camera</h3>
+          <div style={{ height: 240 }}>
+            {timeline.length < 2 ? (
+              <p className="muted">Sit in frame on Live iris to fill this chart.</p>
+            ) : (
+              <ResponsiveContainer>
+                <AreaChart data={timeline}>
+                  <CartesianGrid stroke="rgba(212,179,122,0.08)" vertical={false} />
+                  <XAxis dataKey="i" hide />
+                  <YAxis stroke="#c5d5cc" tick={{ fill: "#c5d5cc", fontSize: 11 }} />
+                  <Tooltip {...tip} />
+                  <Area type="monotone" dataKey="blink" stroke="#8fb89a" fill="rgba(143,184,154,0.2)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+        <div className="card">
+          <h3 className="plain">Rituals today</h3>
+          <div className="break-list">
+            {data.recent_breaks.length === 0 && <p className="muted">No pauses yet — they appear when your live score crosses the threshold.</p>}
+            {data.recent_breaks.map((b) => (
+              <div className="break-row" key={b.id}>
+                <span>{b.title}</span>
+                <span className={`tag ${b.status === "completed" ? "" : "skip"}`}>{b.status}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 18 }}>
+            <Link className="btn btn-ghost" to="/app/settings">Install Guardian for all websites</Link>
+          </div>
+        </div>
+      </div>
+
+      {!empty && (
+        <div className="card chart-card" style={{ marginTop: 16 }}>
+          <h3>Seven-day load (your camera days only)</h3>
           <div style={{ height: 240 }}>
             <ResponsiveContainer>
               <BarChart data={data.week}>
@@ -98,24 +169,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
         </div>
-        <div className="card">
-          <h3 className="plain">Rituals today</h3>
-          <div className="break-list">
-            {data.recent_breaks.length === 0 && <p className="muted">No pauses yet today.</p>}
-            {data.recent_breaks.map((b) => (
-              <div className="break-row" key={b.id}>
-                <span>{b.title}</span>
-                <span className={`tag ${b.status === "completed" ? "" : "skip"}`}>{b.status}</span>
-              </div>
-            ))}
-          </div>
-          {hourly.length > 0 && (
-            <p className="muted" style={{ marginTop: 18 }}>
-              Afternoon physiology still dominates most days — the 14:00 circadian dip is visible in the model’s hour feature.
-            </p>
-          )}
-        </div>
-      </div>
+      )}
     </>
   );
 }

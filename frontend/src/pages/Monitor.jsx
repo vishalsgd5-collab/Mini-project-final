@@ -68,12 +68,31 @@ export default function Monitor() {
   const activityRef = useRef(activity);
   const ritualRef = useRef(ritual);
   const offerRef = useRef(offer);
+  const statusRef = useRef(status);
   liveRef.current = live;
   activityRef.current = activity;
   ritualRef.current = ritual;
   offerRef.current = offer;
+  statusRef.current = status;
 
   useEffect(() => {
+    enableAlerts();
+    let lock;
+    async function wake() {
+      try {
+        lock = await navigator.wakeLock?.request("screen");
+      } catch {
+        /* unsupported */
+      }
+    }
+    wake();
+    const onVis = () => {
+      if (!document.hidden) {
+        videoRef.current?.play?.().catch(() => {});
+        wake();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
     let id;
     (async () => {
       const s = await api("/api/sessions/start", { method: "POST" });
@@ -82,6 +101,12 @@ export default function Monitor() {
     })();
     startedAt.current = performance.now();
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      try {
+        lock?.release?.();
+      } catch {
+        /* ignore */
+      }
       if (id) {
         const minutes = (performance.now() - startedAt.current) / 60000;
         api("/api/sessions/end", {
@@ -123,11 +148,13 @@ export default function Monitor() {
           posture_slouch: snapshot.slouch,
           look_away_ratio: act.lookAwayRatio,
           session_id: sessionId,
+          from_camera: statusRef.current === "live",
         };
         const out = await api("/api/fatigue/predict", { method: "POST", body });
         setPred(out);
         if (out.intervention && !offerRef.current && !ritualRef.current && performance.now() - lastBreak.current > 20000) {
           setOffer(out.intervention);
+          pushRitual(out.intervention);
         }
       } catch (err) {
         console.warn(err);
@@ -162,11 +189,14 @@ export default function Monitor() {
       <div className="topbar">
         <div>
           <h1>Live iris</h1>
-          <p>Numeric features only. The frame never leaves this browser.</p>
+          <p>Leave this tab open for background care. Graphs only store a live camera lock — not lab mode.</p>
         </div>
-        <button className={running ? "btn btn-danger" : "btn btn-gold"} onClick={() => setRunning((v) => !v)}>
-          {running ? "Pause" : "Resume"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-ghost" onClick={() => enableAlerts()}>Enable desktop alerts</button>
+          <button className={running ? "btn btn-danger" : "btn btn-gold"} onClick={() => setRunning((v) => !v)}>
+            {running ? "Pause" : "Resume"}
+          </button>
+        </div>
       </div>
 
       <div className="monitor">

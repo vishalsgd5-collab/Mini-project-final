@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { enableAlerts } from "../lib/notify";
 
 export default function Settings() {
   const { user, setUser } = useAuth();
@@ -31,9 +32,29 @@ export default function Settings() {
       <div className="topbar">
         <div>
           <h1>Studio settings</h1>
-          <p>Sensitivity changes the fatigue threshold the bandit must clear before it interrupts.</p>
+          <p>Desktop alerts and the Guardian extension are how rituals leave this tab.</p>
         </div>
       </div>
+
+      <div className="card" style={{ marginBottom: 18, maxWidth: 640 }}>
+        <div className="cat">background · every website · every app</div>
+        <h3>AURA Guardian</h3>
+        <p>
+          A website cannot run your webcam after Chrome is closed, and it cannot draw on
+          other sites by itself. Install the unpacked Chrome extension in this repo’s
+          <b> extension</b> folder, then leave Live iris open.
+        </p>
+        <ol className="steps">
+          <li>Chrome → chrome://extensions → Developer mode ON</li>
+          <li>Load unpacked → choose the <code>extension</code> folder</li>
+          <li>Click Enable desktop alerts below, and Allow the camera on Live iris</li>
+          <li>Keep that tab open (minimized is fine). Rituals then appear on YouTube, Gmail, docs — and as a Windows toast over Word or Zoom</li>
+        </ol>
+        <button className="btn btn-gold" type="button" onClick={() => enableAlerts()}>
+          Enable desktop alerts
+        </button>
+      </div>
+
       <form className="settings" onSubmit={save}>
         <label className="field">
           <span>Name</span>
@@ -70,8 +91,8 @@ export default function Settings() {
         <button className="btn btn-gold" type="submit">Save</button>
         {msg && <p className="muted">{msg}</p>}
         <p className="muted">
-          Signed in as {user.email}. Video is processed on-device with MediaPipe Face Mesh.
-          The API receives only the 17 numeric features used by LightGBM.
+          Signed in as {user.email}. Video stays on this device. Dashboard graphs use live
+          camera samples only — never lab-mode simulation.
         </p>
       </form>
     </>

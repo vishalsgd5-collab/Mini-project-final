@@ -11,12 +11,37 @@ const CATALOG = [
   { id: "micro_walk", title: "Micro Walk", duration_sec: 75, category: "body", cue: "Walk for a little over a minute.", steps: ["Stand and walk to another room or a window.", "Keep a natural pace — no phone.", "At the window, look at the farthest object you can see.", "Return and sit with a lengthened spine."] },
 ];
 
-const KEY = "aura_local_v1";
+const KEY = "aura_realtime_v1";
+
+function emptyDb() {
+  return {
+    users: [
+      {
+        id: 1,
+        name: "Maya Chen",
+        email: "demo@aura.health",
+        password: "aura1234",
+        work_start_hour: 9,
+        work_end_hour: 18,
+        break_sensitivity: "balanced",
+        enable_camera: true,
+        enable_keyboard: true,
+        enable_mouse: true,
+      },
+    ],
+    nextUser: 2,
+    nextSession: 1,
+    nextEvent: 1,
+    readings: [],
+    events: [],
+    sessions: [],
+  };
+}
 
 function store() {
   const raw = localStorage.getItem(KEY);
   if (raw) return JSON.parse(raw);
-  const db = seed();
+  const db = emptyDb();
   localStorage.setItem(KEY, JSON.stringify(db));
   return db;
 }
@@ -32,57 +57,6 @@ function levelOf(score) {
   if (score < 50) return "mild";
   if (score < 75) return "moderate";
   return "severe";
-}
-
-function seed() {
-  const demo = {
-    id: 1,
-    name: "Maya Chen",
-    email: "demo@aura.health",
-    password: "aura1234",
-    work_start_hour: 9,
-    work_end_hour: 18,
-    break_sensitivity: "balanced",
-    enable_camera: true,
-    enable_keyboard: true,
-    enable_mouse: true,
-  };
-  const readings = [];
-  const events = [];
-  const now = Date.now();
-  for (let day = 6; day >= 0; day--) {
-    const day0 = new Date(now - day * 86400000);
-    day0.setHours(9, 10, 0, 0);
-    for (let i = 0; i < 40; i++) {
-      const t = day0.getTime() + i * 7.5 * 60000;
-      const hour = 9 + (i * 7.5) / 60;
-      const latent = clamp(0.18 + 0.004 * i + 0.22 * Math.exp(-0.5 * ((hour - 14.8) / 1.4) ** 2), 0.05, 0.95);
-      const score = clamp(18 + 70 * latent, 8, 96);
-      readings.push({
-        ts: new Date(t).toISOString(),
-        fatigue_score: +score.toFixed(1),
-        level: levelOf(score),
-        blink_rate: +(18 - 9 * latent).toFixed(1),
-        perclos: +(0.06 + 0.32 * latent).toFixed(3),
-        avg_ear: +(0.3 - 0.12 * latent).toFixed(3),
-        continuous_screen_min: +(i * 7.5).toFixed(1),
-      });
-    }
-    const arms = CATALOG;
-    for (let j = 0; j < 4; j++) {
-      const arm = arms[j % arms.length];
-      const completed = j !== 2;
-      events.push({
-        id: day * 10 + j + 1,
-        title: arm.title,
-        status: completed ? "completed" : "skipped",
-        ts: new Date(day0.getTime() + (40 + j * 55) * 60000).toISOString(),
-        duration_sec: arm.duration_sec,
-        reward: completed ? 1 : -0.25,
-      });
-    }
-  }
-  return { users: [demo], nextUser: 2, nextSession: 1, nextEvent: 80, readings, events, sessions: [] };
 }
 
 function publicUser(u) {
@@ -207,7 +181,9 @@ function overview() {
       detections: dayR.filter((r) => r.fatigue_score >= 50).length,
     });
   }
-  const wellness = clamp(Math.round(100 - avg(scores) * 0.55 + todayE.filter((e) => e.status === "completed").length * 4), 8, 98);
+  const wellness = scores.length
+    ? clamp(Math.round(100 - avg(scores) * 0.55 + todayE.filter((e) => e.status === "completed").length * 4), 8, 98)
+    : 0;
   return {
     generated_at: now.toISOString(),
     today: {
@@ -222,7 +198,10 @@ function overview() {
       wellness,
     },
     hourly: [],
-    timeline: (todayR.length ? todayR : db.readings).slice(-120),
+    timeline: (todayR.length ? todayR : db.readings).slice(-120).map((r) => ({
+      ...r,
+      score: r.fatigue_score,
+    })),
     week: days,
     recent_breaks: todayE.slice(-8).reverse(),
     insight: scores.length
@@ -277,14 +256,23 @@ export function localApi(path, { method = "GET", body } = {}) {
   if (path === "/api/sessions/end" && m === "POST") return { ok: true };
   if (path === "/api/fatigue/predict" && m === "POST") {
     const result = predict(body);
-    db.readings.push({ ts: new Date().toISOString(), ...result, blink_rate: body.blink_rate, perclos: body.perclos, avg_ear: body.avg_ear, continuous_screen_min: body.continuous_screen_min });
+    if (body.from_camera) {
+      db.readings.push({
+        ts: new Date().toISOString(),
+        ...result,
+        blink_rate: body.blink_rate,
+        perclos: body.perclos,
+        avg_ear: body.avg_ear,
+        continuous_screen_min: body.continuous_screen_min,
+      });
+    }
     const last = [...db.events].reverse().find((e) => e.status === "completed");
     const minutesSince = last ? (Date.now() - new Date(last.ts).getTime()) / 60000 : 999;
     let intervention = null;
     const gates = { gentle: 68, balanced: 52, assertive: 40 };
     const user = db.users[0];
     const threshold = gates[user.break_sensitivity] || 52;
-    const should = result.fatigue_score >= 78 || (minutesSince >= 8 && result.fatigue_score >= threshold);
+    const should = body.from_camera && (result.fatigue_score >= 78 || (minutesSince >= 8 && result.fatigue_score >= threshold));
     if (should && body.session_id) {
       const rec = pickArm(body, result.fatigue_score);
       const event_id = db.nextEvent++;
