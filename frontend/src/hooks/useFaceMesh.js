@@ -4,6 +4,7 @@ import {
   YawnTracker,
   bothEars,
   drawOverlay,
+  eyeIsClosed,
   mouthAspect,
   poseFromLandmarks,
   poseFromMatrix,
@@ -188,6 +189,9 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
           const matrix = result.facialTransformationMatrixes?.[0]?.data;
           const pose = matrix ? poseFromMatrix(matrix) : poseFromLandmarks(face);
           const blink = blinker.current.push(ear.avg, now, bscore);
+          const glasses = glassesRef.current || blink.glassesLikely;
+          const leftClosed = eyeIsClosed(ear.left, blink.openBaseline, blends.eyeBlinkLeft || 0, glasses);
+          const rightClosed = eyeIsClosed(ear.right, blink.openBaseline, blends.eyeBlinkRight || 0, glasses);
           const yawns = yawner.current.push(mar, now);
           const actions = actor.current.push({
             closed: blink.closed,
@@ -199,7 +203,12 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             now,
           });
           if (ctx) {
-            drawOverlay(ctx, canvas.width, canvas.height, face, { ...ear, closed: blink.closed, openBaseline: blink.openBaseline }, pose);
+            drawOverlay(ctx, canvas.width, canvas.height, face, {
+              ...ear,
+              leftClosed,
+              rightClosed,
+              openBaseline: blink.openBaseline,
+            }, pose);
           }
           frames.current += 1;
           let fps = 0;
@@ -212,6 +221,8 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             ear: ear.avg,
             earLeft: ear.left,
             earRight: ear.right,
+            leftClosed,
+            rightClosed,
             blinkRate: blink.blinkRate,
             perclos: blink.perclos,
             earStd: blink.earStd,

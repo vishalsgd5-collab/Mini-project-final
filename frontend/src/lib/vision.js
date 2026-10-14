@@ -28,6 +28,14 @@ export function bothEars(landmarks) {
   return { left, right, avg: (left + right) / 2 };
 }
 
+export function eyeIsClosed(earValue, openBaseline = 0.28, blinkScore = 0, glasses = false) {
+  const drop = glasses ? 0.78 : 0.72;
+  const blendThresh = glasses ? 0.38 : 0.5;
+  const byEar = earValue < Math.max(0.12, openBaseline * drop);
+  const byBlend = blinkScore >= blendThresh;
+  return glasses ? byBlend || byEar : byEar || (byBlend && earValue < openBaseline * 0.85);
+}
+
 export function mouthAspect(landmarks) {
   return aspectRatio(landmarks, MOUTH);
 }
@@ -206,23 +214,36 @@ export function drawOverlay(ctx, w, h, landmarks, ear, pose) {
   ctx.closePath();
   ctx.stroke();
 
-  const drawEye = (idx, value) => {
+  const drawEye = (idx, closed) => {
+    const pts = idx.map((i) => landmarks[i]).filter(Boolean);
+    if (!pts.length) return;
     ctx.beginPath();
-    idx.forEach((i, n) => {
-      const p = landmarks[i];
+    pts.forEach((p, n) => {
       const x = p.x * w;
       const y = p.y * h;
       if (n === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
-    const closed = ear.closed ?? value < Math.max(0.12, (ear.openBaseline || 0.28) * 0.75);
     ctx.strokeStyle = closed ? "rgba(224, 138, 106, 0.95)" : "rgba(143, 184, 154, 0.9)";
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = closed ? 2.4 : 1.6;
     ctx.stroke();
+    if (closed) {
+      const cx = (pts.reduce((s, p) => s + p.x, 0) / pts.length) * w;
+      const cy = (pts.reduce((s, p) => s + p.y, 0) / pts.length) * h;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 11, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(224, 80, 70, 0.95)";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(224, 80, 70, 0.85)";
+      ctx.fill();
+    }
   };
-  drawEye(LEFT_EYE, ear.left);
-  drawEye(RIGHT_EYE, ear.right);
+  drawEye(LEFT_EYE, !!ear.leftClosed);
+  drawEye(RIGHT_EYE, !!ear.rightClosed);
 
   const nose = landmarks[1];
   ctx.fillStyle = "rgba(212, 179, 122, 0.85)";
