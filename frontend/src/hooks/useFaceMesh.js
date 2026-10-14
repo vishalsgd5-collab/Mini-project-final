@@ -20,33 +20,97 @@ function friendlyCamError(err) {
   const name = err?.name || "";
   const msg = err?.message || "";
   if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-    return "Camera permission is blocked. Click the camera icon in the Chrome address bar → Always allow, then retry.";
+    return "Camera permission is blocked. Click the lock icon in the Chrome address bar → Camera → Allow, then press Turn camera on.";
   }
   if (name === "NotReadableError" || /in use|busy|Device in use/i.test(msg)) {
-    return "Camera is already in use. Close Zoom, Teams, Meet, Skype, Windows Camera, and other Chrome tabs that might be using it. Then click Retry camera.";
+    return "Camera is already in use. Close Zoom, Teams, Meet, Skype, Windows Camera, and other Chrome tabs, then press Turn camera on.";
   }
   if (name === "NotFoundError" || name === "DevicesNotFoundError") {
-    return "No webcam was found. Plug one in, then retry.";
+    return "No webcam was found. Plug one in, then press Turn camera on.";
   }
   if (name === "NotSupportedError" || name === "SecurityError") {
     return "This page must stay on HTTPS for the camera to open.";
   }
-  return msg || "Camera unavailable";
+  if (name === "AbortError") {
+    return "Chrome aborted the camera. Press Turn camera on once more.";
+  }
+  return msg || "Camera unavailable. Press Turn camera on.";
+}
+
+async function waitForVideoEl(videoRef, cancelled) {
+  for (let i = 0; i < 50; i += 1) {
+    if (cancelled()) return null;
+    if (videoRef.current) return videoRef.current;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return videoRef.current;
+}
+
+function liveTracks(stream) {
+  return stream instanceof MediaStream && stream.getVideoTracks().some((t) => t.readyState === "live");
+}
+
+async function playVideo(video) {
+  video.muted = true;
+  video.defaultMuted = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.setAttribute("playsinline", "");
+  video.setAttribute("webkit-playsinline", "");
+  video.setAttribute("muted", "");
+  if (video.readyState < 1) {
+    await new Promise((resolve, reject) => {
+      const t = window.setTimeout(() => reject(new Error("Camera timed out waiting for video.")), 10000);
+      const done = () => {
+        window.clearTimeout(t);
+        video.removeEventListener("loadedmetadata", done);
+        resolve();
+      };
+      video.addEventListener("loadedmetadata", done);
+    });
+  }
+  try {
+    await video.play();
+  } catch {
+    await new Promise((r) => setTimeout(r, 200));
+    await video.play();
+  }
 }
 
 async function openCamera() {
-  const attempts = [
-    { video: { facingMode: "user" }, audio: false },
-    { video: true, audio: false },
-    { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false },
-  ];
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error("This browser cannot open a webcam. Use Chrome.");
+  }
+  const attempts = [];
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter((d) => d.kind === "videoinput");
+    if (cams[0]?.deviceId) {
+      attempts.push({
+        video: { deviceId: { exact: cams[0].deviceId } },
+        audio: false,
+      });
+      attempts.push({
+        video: { deviceId: { ideal: cams[0].deviceId }, width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false,
+      });
+    }
+  } catch {
+    /* permission may still be pending */
+  }
+  attempts.push({ video: true, audio: false });
+  attempts.push({ video: { facingMode: "user" }, audio: false });
+  attempts.push({
+    video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" },
+    audio: false,
+  });
   let last;
   for (const constraints of attempts) {
     try {
       return await navigator.mediaDevices.getUserMedia(constraints);
     } catch (err) {
       last = err;
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 250));
     }
   }
   throw last || new Error("Camera unavailable");
@@ -56,11 +120,36 @@ function blendScore(blends) {
   return ((blends.eyeBlinkLeft || 0) + (blends.eyeBlinkRight || 0)) / 2;
 }
 
+let visionMod = null;
+async function loadLandmarker() {
+  if (!visionMod) visionMod = await import("@mediapipe/tasks-vision");
+  const { FaceLandmarker, FilesetResolver } = visionMod;
+  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
+  const options = {
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true,
+  };
+  try {
+    return await FaceLandmarker.createFromOptions(fileset, {
+      ...options,
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+    });
+  } catch {
+    return await FaceLandmarker.createFromOptions(fileset, {
+      ...options,
+      baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
+    });
+  }
+}
+
 export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false }) {
   const glassesRef = useRef(glassesMode);
   glassesRef.current = glassesMode;
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
+  const [camOn, setCamOn] = useState(false);
   const [live, setLive] = useState({
     ear: 0.28,
     blinkRate: 16,
@@ -84,81 +173,78 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
   const frames = useRef(0);
   const fpsAt = useRef(performance.now());
 
-  const stop = useCallback(() => {
-    cancelAnimationFrame(raf.current);
+  const stopTracks = useCallback(() => {
     const stream = videoRef.current?.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
+    setCamOn(false);
+  }, [videoRef]);
+
+  const stop = useCallback(() => {
+    cancelAnimationFrame(raf.current);
+    stopTracks();
     try {
       landmarker.current?.close?.();
     } catch {
       /* ignore */
     }
     landmarker.current = null;
-  }, [videoRef]);
+  }, [stopTracks]);
 
   useEffect(() => {
     if (!enabled) {
-      stop();
+      cancelAnimationFrame(raf.current);
+      stopTracks();
       setStatus("idle");
       return undefined;
     }
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
     async function boot() {
       setStatus("loading");
       setError("");
       try {
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error("This browser cannot open a webcam.");
-        }
-        const stream = await openCamera();
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        const video = videoRef.current;
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        await video.play();
+        const video = await waitForVideoEl(videoRef, isCancelled);
+        if (!video) throw new Error("Video element is not ready. Press Turn camera on.");
+        if (cancelled) return;
 
-        const vision = await import("@mediapipe/tasks-vision");
-        const { FaceLandmarker, FilesetResolver } = vision;
-        const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
-        const options = {
-          runningMode: "VIDEO",
-          numFaces: 1,
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
-        };
-        let lm;
-        try {
-          lm = await FaceLandmarker.createFromOptions(fileset, {
-            ...options,
-            baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-          });
-        } catch {
-          lm = await FaceLandmarker.createFromOptions(fileset, {
-            ...options,
-            baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
-          });
+        let stream = video.srcObject;
+        if (!liveTracks(stream)) {
+          stream = await openCamera();
+          if (cancelled) {
+            stream.getTracks().forEach((t) => t.stop());
+            return;
+          }
+          if (video.srcObject && video.srcObject !== stream) {
+            video.srcObject.getTracks?.().forEach((t) => t.stop());
+          }
+          video.srcObject = stream;
         }
-        if (cancelled) {
-          lm.close?.();
-          stream.getTracks().forEach((t) => t.stop());
-          return;
+        await playVideo(video);
+        if (cancelled) return;
+        setCamOn(true);
+        setStatus("live");
+
+        if (!landmarker.current) {
+          landmarker.current = await Promise.race([
+            loadLandmarker(),
+            new Promise((_, rej) =>
+              setTimeout(() => rej(new Error("Face engine timed out. Camera is on — press Turn camera on to retry tracking.")), 25000)
+            ),
+          ]);
         }
-        landmarker.current = lm;
+        if (cancelled) return;
         blinker.current = new BlinkTracker();
         yawner.current = new YawnTracker();
         actor.current = new FaceActionTracker();
-        setStatus("live");
         loop();
       } catch (err) {
         console.warn("Camera / MediaPipe unavailable", err);
+        const hasCam = liveTracks(videoRef.current?.srcObject);
+        setCamOn(hasCam);
         setError(friendlyCamError(err));
-        setStatus("lab");
+        setStatus(hasCam ? "live" : "idle");
       }
     }
 
@@ -166,7 +252,11 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const lm = landmarker.current;
-      if (!video || !lm || video.readyState < 2) {
+      if (!video || video.readyState < 2) {
+        raf.current = requestAnimationFrame(loop);
+        return;
+      }
+      if (!lm) {
         raf.current = requestAnimationFrame(loop);
         return;
       }
@@ -257,7 +347,6 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf.current);
-      stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, retryToken]);
@@ -266,5 +355,5 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
     blinker.current.startCalibrate(3500);
   }, []);
 
-  return { status, error, live, stop, calibrate };
+  return { status, error, live, stop, calibrate, camOn };
 }

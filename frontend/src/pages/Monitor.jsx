@@ -50,7 +50,7 @@ export default function Monitor() {
   const [running, setRunning] = useState(true);
   const [retryToken, setRetryToken] = useState(0);
   const [glassesMode, setGlassesMode] = useState(() => localStorage.getItem("aura_glasses") === "1");
-  const { status, error, live: camLive, calibrate } = useFaceMesh({
+  const { status, error, live: camLive, calibrate, camOn } = useFaceMesh({
     videoRef,
     canvasRef,
     enabled: running && user?.enable_camera !== false,
@@ -327,23 +327,36 @@ export default function Monitor() {
     return () => clearInterval(id);
   }, [running, sessionId, user]);
 
-  useEffect(() => {
-    if (status !== "live" || pipOnce.current || !videoRef.current?.srcObject) return undefined;
-    pipOnce.current = true;
-    startGuardian({
-      video: videoRef.current,
-      getHud: () => ({
-        score: Math.round(predRef.current?.fatigue_score ?? 0),
-        level: predRef.current?.level || "alert",
-        line: liveRef.current?.present
-          ? `${Math.round(liveRef.current?.attention ?? 100)} attention · tracking over other apps`
-          : "NO FACE — away timer running",
-      }),
-    }).catch(() => {
-      pipOnce.current = false;
-    });
-    return undefined;
-  }, [status]);
+  async function turnOnCamera() {
+    unlockAudio();
+    setRunning(true);
+    setHint("Allow the camera if Chrome asks.");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      const video = videoRef.current;
+      if (video) {
+        if (video.srcObject && video.srcObject !== stream) {
+          video.srcObject.getTracks?.().forEach((t) => t.stop());
+        }
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "");
+        await video.play().catch(() => {});
+      }
+      setHint("Camera on. Sit in the frame.");
+    } catch (err) {
+      const name = err?.name || "";
+      if (name === "NotAllowedError") {
+        setHint("Blocked. Click the lock icon in the address bar → Camera → Allow, then press Turn camera on again.");
+      } else if (name === "NotReadableError") {
+        setHint("Camera in use. Close Zoom / Teams / other AURA tabs, then press Turn camera on.");
+      } else {
+        setHint(err?.message || "Could not open the camera.");
+      }
+    }
+    setRetryToken((n) => n + 1);
+  }
 
   async function feedback(status, extra = {}) {
     const eventId = (ritual || offer)?.event_id;
@@ -374,6 +387,9 @@ export default function Monitor() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="btn btn-gold" onClick={turnOnCamera}>
+            {camOn ? "Restart camera" : "Turn camera on"}
+          </button>
           <button
             className="btn btn-gold"
             onClick={async () => {
@@ -533,15 +549,15 @@ export default function Monitor() {
           <div className="stage">
             <video ref={videoRef} playsInline muted autoPlay />
             <canvas ref={canvasRef} />
-            {status !== "live" && (
+            {!camOn && (
               <div className="cam-gate">
-                <strong>{status === "loading" ? "Opening camera…" : "Camera not live"}</strong>
+                <strong>{status === "loading" ? "Opening camera…" : "Camera is off"}</strong>
                 <p>
                   {error ||
-                    "Allow the webcam when Chrome asks. Close Zoom / Teams / other tabs if it says the device is in use."}
+                    "Press Turn camera on, then Allow when Chrome asks. Close Zoom / Teams / other tabs if the device is in use."}
                 </p>
-                <button className="btn btn-gold" onClick={() => setRetryToken((n) => n + 1)}>
-                  Retry camera
+                <button className="btn btn-gold" onClick={turnOnCamera}>
+                  Turn camera on
                 </button>
               </div>
             )}
