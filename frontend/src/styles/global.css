@@ -332,6 +332,18 @@ img { max-width: 100%; display: block; }
   border-color: var(--coral) !important;
   box-shadow: 0 0 0 1px rgba(224, 138, 106, 0.35);
 }
+.beep-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  background: rgba(224, 138, 106, 0.22);
+  animation: flash 0.65s ease-out;
+}
+@keyframes flash {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
 .cam-gate {
   position: absolute;
   inset: 0;

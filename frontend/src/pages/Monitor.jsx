@@ -70,6 +70,7 @@ export default function Monitor() {
   const [extTyping, setExtTyping] = useState({ wpm: 0, rpm: 0 });
   const [sound, setSound] = useState(isSoundOn());
   const [hint, setHint] = useState("");
+  const [flash, setFlash] = useState(false);
   const [fatigueHold, setFatigueHold] = useState(0);
   const [recap, setRecap] = useState(null);
   const lastFatiguePing = useRef(0);
@@ -92,6 +93,8 @@ export default function Monitor() {
   offerRef.current = offer;
   statusRef.current = status;
   predRef.current = pred;
+  const runningRef = useRef(running);
+  runningRef.current = running;
 
   useEffect(() => {
     enableAlerts();
@@ -172,20 +175,23 @@ export default function Monitor() {
   useEffect(() => {
     const id = setInterval(() => {
       const score = predRef.current?.fatigue_score ?? 0;
-      const cam = statusRef.current === "live";
-      if (cam && score >= 50) {
+      const watching = statusRef.current === "live" || statusRef.current === "lab";
+      if (runningRef.current && watching && score >= 50) {
         if (!fatigueSince.current) fatigueSince.current = performance.now();
         const held = (performance.now() - fatigueSince.current) / 1000;
         setFatigueHold(held);
         document.title = `AURA · ${Math.round(score)} · ${Math.floor(held)}s fatigue`;
         if (held >= 30 && performance.now() - lastBeep.current > 30000 && performance.now() > snoozeUntil.current) {
           lastBeep.current = performance.now();
-          playFatigueBeep(score >= 75);
+          const ok = playFatigueBeep(score >= 75);
+          setFlash(true);
+          window.setTimeout(() => setFlash(false), 700);
           pushWindows(
             `AURA · fatigue for ${Math.floor(held)} seconds`,
             `Score ${Math.round(score)}. Look away, blink fully, or take a ritual. Press F8 to mute the beep.`,
             "aura-hold"
           );
+          if (!ok) setHint("Beep blocked — click Test beep + Windows once, then wait 30s of fatigue.");
         }
       } else {
         fatigueSince.current = null;
@@ -289,8 +295,10 @@ export default function Monitor() {
             className="btn btn-gold"
             onClick={async () => {
               unlockAudio();
-              const ok = await testWindowsAlert();
               playFatigueBeep(false);
+              setFlash(true);
+              window.setTimeout(() => setFlash(false), 700);
+              const ok = await testWindowsAlert();
               setAlertState(typeof Notification !== "undefined" ? Notification.permission : "denied");
               if (!ok) {
                 window.alert("Allow notifications for this site in Chrome (lock icon in the address bar), and in Windows Settings → System → Notifications → Google Chrome.");
@@ -369,6 +377,7 @@ export default function Monitor() {
           </button>
         </div>
       )}
+      {flash && <div className="beep-flash" />}
       {hint && (
         <div className="card" style={{ marginBottom: 14 }}>
           <strong>{hint}</strong>
