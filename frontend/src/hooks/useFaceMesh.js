@@ -14,7 +14,43 @@ const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 
-export function useFaceMesh({ videoRef, canvasRef, enabled }) {
+function friendlyCamError(err) {
+  const name = err?.name || "";
+  const msg = err?.message || "";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return "Camera permission is blocked. Click the camera icon in the Chrome address bar → Always allow, then retry.";
+  }
+  if (name === "NotReadableError" || /in use|busy|Device in use/i.test(msg)) {
+    return "Camera is already in use. Close Zoom, Teams, Meet, Skype, Windows Camera, and other Chrome tabs that might be using it. Then click Retry camera.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "No webcam was found. Plug one in, then retry.";
+  }
+  if (name === "NotSupportedError" || name === "SecurityError") {
+    return "This page must stay on HTTPS for the camera to open.";
+  }
+  return msg || "Camera unavailable";
+}
+
+async function openCamera() {
+  const attempts = [
+    { video: { facingMode: "user" }, audio: false },
+    { video: true, audio: false },
+    { video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }, audio: false },
+  ];
+  let last;
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints);
+    } catch (err) {
+      last = err;
+      await new Promise((r) => setTimeout(r, 350));
+    }
+  }
+  throw last || new Error("Camera unavailable");
+}
+
+export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0 }) {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [live, setLive] = useState({
@@ -44,13 +80,18 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
     const stream = videoRef.current?.srcObject;
     if (stream) stream.getTracks().forEach((t) => t.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
+    try {
+      landmarker.current?.close?.();
+    } catch {
+      /* ignore */
+    }
     landmarker.current = null;
-    setStatus("idle");
   }, [videoRef]);
 
   useEffect(() => {
     if (!enabled) {
       stop();
+      setStatus("idle");
       return undefined;
     }
     let cancelled = false;
@@ -59,16 +100,18 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
       setStatus("loading");
       setError("");
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 960, height: 720, facingMode: "user" },
-          audio: false,
-        });
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("This browser cannot open a webcam.");
+        }
+        const stream = await openCamera();
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
         const video = videoRef.current;
         video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
         await video.play();
 
         const vision = await import("@mediapipe/tasks-vision");
@@ -94,6 +137,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
         }
         if (cancelled) {
           lm.close?.();
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
         landmarker.current = lm;
@@ -103,7 +147,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
         loop();
       } catch (err) {
         console.warn("Camera / MediaPipe unavailable", err);
-        setError(err?.message || "Camera unavailable");
+        setError(friendlyCamError(err));
         setStatus("lab");
       }
     }
@@ -123,8 +167,8 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
         const face = result.faceLandmarks?.[0];
         const ctx = canvas?.getContext("2d");
         if (canvas) {
-          canvas.width = video.videoWidth || 960;
-          canvas.height = video.videoHeight || 720;
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
         }
         if (face) {
           const ear = bothEars(face);
@@ -158,8 +202,8 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
             blinks: blink.blinks,
             fps: fps || s.fps,
           }));
-        } else {
-          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        } else if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
           setLive((s) => ({ ...s, present: false }));
         }
       }
@@ -173,7 +217,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled }) {
       stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled]);
+  }, [enabled, retryToken]);
 
   return { status, error, live, stop };
 }

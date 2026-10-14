@@ -328,9 +328,25 @@ img { max-width: 100%; display: block; }
   transform: scaleX(-1);
 }
 .stage canvas { z-index: 2; }
+.cam-gate {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 28px;
+  text-align: center;
+  background: rgba(8, 17, 13, 0.72);
+  backdrop-filter: blur(8px);
+}
+.cam-gate strong { font-family: var(--serif); font-size: 28px; }
+.cam-gate p { color: var(--mist); max-width: 420px; line-height: 1.5; font-size: 14px; }
 .stage-hud {
   position: absolute;
-  z-index: 3;
+  z-index: 5;
   left: 16px; right: 16px; bottom: 16px;
   display: flex;
   justify-content: space-between;

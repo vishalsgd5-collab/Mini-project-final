@@ -45,10 +45,12 @@ export default function Monitor() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [running, setRunning] = useState(true);
+  const [retryToken, setRetryToken] = useState(0);
   const { status, error, live: camLive } = useFaceMesh({
     videoRef,
     canvasRef,
     enabled: running && user?.enable_camera !== false,
+    retryToken,
   });
   const labLive = useLabLive(running && status === "lab");
   const live = status === "lab" ? labLive : camLive;
@@ -170,8 +172,20 @@ export default function Monitor() {
       <div className="monitor">
         <div>
           <div className="stage">
-            <video ref={videoRef} playsInline muted />
+            <video ref={videoRef} playsInline muted autoPlay />
             <canvas ref={canvasRef} />
+            {status !== "live" && (
+              <div className="cam-gate">
+                <strong>{status === "loading" ? "Opening camera…" : "Camera not live"}</strong>
+                <p>
+                  {error ||
+                    "Allow the webcam when Chrome asks. Close Zoom / Teams / other tabs if it says the device is in use."}
+                </p>
+                <button className="btn btn-gold" onClick={() => setRetryToken((n) => n + 1)}>
+                  Retry camera
+                </button>
+              </div>
+            )}
             <div className="stage-hud">
               <span className={`pill ${status === "live" ? "live" : status === "lab" ? "lab" : ""}`}>{hud}</span>
               <span className="pill">
@@ -179,11 +193,6 @@ export default function Monitor() {
               </span>
             </div>
           </div>
-          {error && (
-            <p className="muted" style={{ marginTop: 10 }}>
-              Camera unavailable ({error}). Running a physiological lab simulation so scoring, the bandit and the dashboard still work.
-            </p>
-          )}
           <div style={{ marginTop: 14 }}>
             <Wave values={ears} />
           </div>
