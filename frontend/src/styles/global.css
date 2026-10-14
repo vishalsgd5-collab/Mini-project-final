@@ -517,6 +517,20 @@ img { max-width: 100%; display: block; }
 .offer h3 { font-family: var(--serif); font-size: 22px; }
 .offer p { color: var(--mist); font-size: 13px; margin: 8px 0 14px; line-height: 1.45; }
 
+/* ---------- ember docket ---------- */
+.docket { display: grid; grid-template-columns: 0.92fr 1.08fr; gap: 22px; align-items: start; }
+.docket-form h3, .docket-item h3 { font-family: var(--serif); font-size: 24px; font-weight: 560; margin: 6px 0 4px; }
+.docket-row { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 12px; }
+.docket-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+.docket-list { display: grid; gap: 12px; }
+.docket-item { display: grid; grid-template-columns: 28px 1fr auto; gap: 14px; align-items: center; }
+.docket-item.is-done h3 { text-decoration: line-through; color: var(--muted); }
+.docket-check {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--gold); background: transparent; cursor: pointer;
+}
+.docket-check.on { background: var(--sage); border-color: var(--sage); }
+
 /* ---------- library / settings ---------- */
 .lib { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .lib .card { min-height: 220px; }
@@ -535,7 +549,7 @@ img { max-width: 100%; display: block; }
 svg.icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 
 @media (max-width: 980px) {
-  .hero, .algo, .auth-wrap, .monitor, .dash-hero, .two, .grid-3, .lib, .stats-strip { grid-template-columns: 1fr; }
+  .hero, .algo, .auth-wrap, .monitor, .dash-hero, .two, .grid-3, .lib, .stats-strip, .docket, .docket-row { grid-template-columns: 1fr; }
   .hero, .section, .land-nav, .footer { padding-left: 22px; padding-right: 22px; }
   .iris-stage { height: 380px; }
   .iris, .lid { transform: scale(0.72); }

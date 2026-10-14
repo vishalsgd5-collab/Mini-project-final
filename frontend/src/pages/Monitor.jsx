@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { tellBeep, tellLive, tellStopBeep } from "../lib/bridge";
 import { enableAlerts, pushRitual, pushWindows, testWindowsAlert } from "../lib/notify";
 import { isSoundOn, playAlarmBeep, playFatigueBeep, playRitualChime, setSoundOn, unlockAudio } from "../lib/sound";
 import Gauge from "../components/Gauge";
@@ -126,6 +127,7 @@ export default function Monitor() {
       window.clearInterval(beepLoop.current);
       beepLoop.current = null;
     }
+    tellStopBeep();
     absentSince.current = liveRef.current?.present ? null : performance.now();
     setAwaySec(0);
     setHint("Alarm stopped. 5-minute away timer reset.");
@@ -223,6 +225,7 @@ export default function Monitor() {
         ) {
           lastBeep.current = performance.now();
           const ok = playFatigueBeep(score >= 75);
+          tellBeep(score >= 75 ? "fatigue" : "fatigue", false);
           setFlash(true);
           window.setTimeout(() => setFlash(false), 700);
           pushWindows(
@@ -249,6 +252,7 @@ export default function Monitor() {
           setAlarmOn(true);
           unlockAudio();
           playAlarmBeep();
+          tellBeep("away", true);
           document.title = "AURA · AWAY ALARM";
           pushWindows(
             "AURA · away from camera 5 minutes",
@@ -261,6 +265,18 @@ export default function Monitor() {
       } else if (present && !alarmOnRef.current) {
         absentSince.current = null;
         setAwaySec(0);
+      }
+
+      if (statusRef.current === "live" || statusRef.current === "lab") {
+        const snap = liveRef.current || {};
+        tellLive({
+          score: predRef.current?.fatigue_score ?? 0,
+          level: predRef.current?.level || "alert",
+          present: !!snap.present,
+          attention: snap.attention ?? 100,
+          blinkRate: snap.blinkRate ?? 0,
+          closedMs: snap.closedMs ?? 0,
+        });
       }
     }, 400);
     return () => clearInterval(id);
@@ -438,22 +454,29 @@ export default function Monitor() {
           <button
             className="btn btn-gold"
             onClick={async () => {
+              unlockAudio();
+              await enableAlerts();
               try {
                 await startGuardian({
                   video: videoRef.current,
                   getHud: () => ({
                     score: Math.round(predRef.current?.fatigue_score ?? 0),
                     level: predRef.current?.level || "alert",
-                    line: `${Math.round(liveRef.current?.attention ?? 100)} attention · ${Math.round(liveRef.current?.blinkRate || 0)} blinks/min`,
+                    line: liveRef.current?.present
+                      ? `${Math.round(liveRef.current?.attention ?? 100)} attention · tracking over other apps`
+                      : "NO FACE — away timer running",
                   }),
                 });
-                setHint("Guardian floating over other apps. Keep this tab open in the background.");
+                setHint("Sitewide Vigil on. Keep this tab open. Load the AURA Guardian extension so beeps and the chip appear on every website. Windows toasts cover Word, Zoom, and other apps.");
               } catch (e) {
-                setHint(e.message || "Could not float window. Use Chrome, then try again.");
+                setHint(
+                  (e.message || "Could not float.") +
+                    " Camera can still run in this tab. Load the Guardian extension for other websites."
+                );
               }
             }}
           >
-            Float over apps
+            Protect all apps
           </button>
           <button
             className={running ? "btn btn-danger" : "btn btn-gold"}

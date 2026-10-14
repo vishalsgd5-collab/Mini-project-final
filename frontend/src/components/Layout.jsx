@@ -1,11 +1,13 @@
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
-import { IconCog, IconEye, IconLeaf, IconMark, IconPulse } from "./Icons";
+import { useEmberReminders } from "../pages/Docket";
+import { IconCog, IconDocket, IconEye, IconLeaf, IconMark, IconPulse } from "./Icons";
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const initial = (user?.name || "A").slice(0, 1).toUpperCase();
+  useEmberReminders();
 
   return (
     <div className="shell">
@@ -19,6 +21,9 @@ export default function Layout() {
           </NavLink>
           <NavLink to="/app/dashboard" title="Wellness pulse" className={({ isActive }) => (isActive ? "active" : "")}>
             <IconPulse />
+          </NavLink>
+          <NavLink to="/app/docket" title="Ember Docket" className={({ isActive }) => (isActive ? "active" : "")}>
+            <IconDocket />
           </NavLink>
           <NavLink to="/app/library" title="Rituals" className={({ isActive }) => (isActive ? "active" : "")}>
             <IconLeaf />

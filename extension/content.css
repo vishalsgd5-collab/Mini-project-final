@@ -1,3 +1,47 @@
+#aura-site-hud {
+  all: initial;
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 2147483645;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #12241c;
+  color: #f3eee4;
+  border: 1px solid #d4b37a;
+  border-radius: 999px;
+  font-family: system-ui, sans-serif;
+  font-size: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+#aura-site-hud strong {
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  color: #d4b37a;
+}
+#aura-site-hud em {
+  font-style: normal;
+  color: #c5d5cc;
+}
+#aura-site-hud .aura-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8fb89a;
+}
+#aura-site-hud.hot {
+  border-color: #e08a6a;
+}
+#aura-site-hud.hot .aura-dot {
+  background: #e08a6a;
+}
+#aura-site-hud.away .aura-dot {
+  background: #c45c4a;
+}
+
 #aura-guardian-root {
   all: initial;
   position: fixed;

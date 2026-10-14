@@ -1,5 +1,9 @@
 (function () {
   const keyTimes = [];
+  let hud = null;
+  let loopId = 0;
+  let audioCtx = null;
+
   window.addEventListener(
     "keydown",
     () => {
@@ -18,24 +22,97 @@
     true
   );
 
-
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     const data = event.data;
-    if (!data || (data.type !== "AURA_RITUAL" && data.type !== "AURA_LIVE")) return;
-    try {
-      chrome.runtime.sendMessage(data);
-    } catch {
-      /* extension context invalidated */
+    if (!data || !data.type) return;
+    if (
+      data.type === "AURA_RITUAL" ||
+      data.type === "AURA_LIVE" ||
+      data.type === "AURA_BEEP" ||
+      data.type === "AURA_STOP_BEEP"
+    ) {
+      try {
+        chrome.runtime.sendMessage(data);
+      } catch {
+        /* extension context invalidated */
+      }
     }
   });
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "AURA_RITUAL" && msg.item) showOverlay(msg.item);
+    if (msg?.type === "AURA_LIVE" && msg.metrics) paintHud(msg.metrics);
     if (msg?.type === "AURA_TYPING") {
       window.postMessage({ type: "AURA_TYPING", rpm: msg.rpm, wpm: msg.wpm }, "*");
     }
+    if (msg?.type === "AURA_BEEP") playBeep(msg.kind, msg.loop);
+    if (msg?.type === "AURA_STOP_BEEP") stopLoop();
   });
+
+  function ensureHud() {
+    if (hud && document.body.contains(hud)) return hud;
+    hud = document.getElementById("aura-site-hud");
+    if (hud) return hud;
+    hud = document.createElement("div");
+    hud.id = "aura-site-hud";
+    hud.innerHTML = `<span class="aura-dot"></span><strong>AURA</strong><em>waiting for Live iris</em>`;
+    (document.body || document.documentElement).appendChild(hud);
+    return hud;
+  }
+
+  function paintHud(m) {
+    const el = ensureHud();
+    const score = Math.round(m.score ?? m.fatigue ?? 0);
+    const present = m.present !== false;
+    const line = present
+      ? `${score} fatigue · ${Math.round(m.attention ?? 100)} attn`
+      : "NO FACE · away timer";
+    el.classList.toggle("hot", score >= 50);
+    el.classList.toggle("away", !present);
+    el.innerHTML = `<span class="aura-dot"></span><strong>AURA</strong><em>${line}</em>`;
+  }
+
+  function ac() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+
+  function tone(kind) {
+    const ctx = ac();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = kind === "away" ? [880, 698] : kind === "docket" ? [523, 659] : [784, 988];
+    freqs.forEach((f, i) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = "sine";
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.18, now + 0.02 + i * 0.16);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26 + i * 0.18);
+      o.connect(g);
+      g.connect(ctx.destination);
+      o.start(now + i * 0.16);
+      o.stop(now + 0.3 + i * 0.18);
+    });
+  }
+
+  function playBeep(kind, loop) {
+    tone(kind);
+    if (loop) {
+      stopLoop();
+      loopId = window.setInterval(() => tone(kind || "away"), 1400);
+    }
+  }
+
+  function stopLoop() {
+    if (loopId) window.clearInterval(loopId);
+    loopId = 0;
+  }
 
   function showOverlay(item) {
     document.getElementById("aura-guardian-root")?.remove();
@@ -69,5 +146,11 @@
       '"': "&quot;",
       "'": "&#39;",
     }[c]));
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensureHud);
+  } else {
+    ensureHud();
   }
 })();

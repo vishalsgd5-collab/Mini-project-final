@@ -1,14 +1,17 @@
 # AURA Guardian — Chrome extension
 
-This is what makes rituals appear **on every website** and as a **Windows / macOS notification** (over Word, Zoom, etc.) while Chrome is running.
+Carries Live iris **detection, beeps, and rituals** onto **every website**, and as **Windows toasts over other applications**, while Chrome stays open.
+
+Chrome cannot run a webcam inside Word or Zoom itself. The camera stays in the AURA tab (or the floating Guardian window). This extension mirrors the same alerts everywhere else.
 
 ## Install (unpacked)
 
-1. Download this `extension` folder (from the repo).
+1. Download this `extension` folder from the repo.
 2. Chrome → `chrome://extensions`
-3. Turn on **Developer mode** (top right).
+3. Turn on **Developer mode**.
 4. **Load unpacked** → select the `extension` folder.
-5. Open AURA Live iris, allow **camera** and **notifications**.
-6. Leave that tab open (or minimized). Browse any other site — when fatigue rises, the ritual card appears on that page and a desktop toast appears over other apps.
+5. Open AURA **Live iris**, click **Turn camera on**, allow camera + notifications.
+6. Click **Protect all apps**. Leave that tab open (minimized is fine).
+7. Work in Gmail, YouTube, VS Code in the browser, Word, Zoom — the AURA chip, beep, and Windows toast still fire.
 
-Chrome cannot keep the webcam on after Chrome itself is quit. Leave Chrome running for background care.
+Reload the extension after each AURA update.
