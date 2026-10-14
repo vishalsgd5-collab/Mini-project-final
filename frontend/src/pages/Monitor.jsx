@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
+import { enableAlerts, pushRitual } from "../lib/notify";
 import Gauge from "../components/Gauge";
 import Wave from "../components/Wave";
 import { Offer, Ritual } from "../components/Intervention";
