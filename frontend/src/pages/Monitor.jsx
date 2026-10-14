@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { enableAlerts, pushRitual, pushWindows, testWindowsAlert } from "../lib/notify";
+import { isSoundOn, playFatigueBeep, playRitualChime, setSoundOn, unlockAudio } from "../lib/sound";
 import Gauge from "../components/Gauge";
 import Wave from "../components/Wave";
 import { Offer, Ritual } from "../components/Intervention";
@@ -65,7 +66,13 @@ export default function Monitor() {
     typeof Notification !== "undefined" ? Notification.permission : "denied"
   );
   const [extTyping, setExtTyping] = useState({ wpm: 0, rpm: 0 });
+  const [sound, setSound] = useState(isSoundOn());
+  const [fatigueHold, setFatigueHold] = useState(0);
+  const [recap, setRecap] = useState(null);
   const lastFatiguePing = useRef(0);
+  const fatigueSince = useRef(null);
+  const lastBeep = useRef(0);
+  const predRef = useRef(null);
   const startedAt = useRef(performance.now());
   const lastBreak = useRef(0);
   const busy = useRef(false);
@@ -80,6 +87,7 @@ export default function Monitor() {
   ritualRef.current = ritual;
   offerRef.current = offer;
   statusRef.current = status;
+  predRef.current = pred;
 
   useEffect(() => {
     enableAlerts();
@@ -131,6 +139,33 @@ export default function Monitor() {
   }, []);
 
   useEffect(() => {
+    const id = setInterval(() => {
+      const score = predRef.current?.fatigue_score ?? 0;
+      const cam = statusRef.current === "live";
+      if (cam && score >= 50) {
+        if (!fatigueSince.current) fatigueSince.current = performance.now();
+        const held = (performance.now() - fatigueSince.current) / 1000;
+        setFatigueHold(held);
+        document.title = `AURA · ${Math.round(score)} · ${Math.floor(held)}s fatigue`;
+        if (held >= 30 && performance.now() - lastBeep.current > 30000) {
+          lastBeep.current = performance.now();
+          playFatigueBeep(score >= 75);
+          pushWindows(
+            `AURA · fatigue for ${Math.floor(held)} seconds`,
+            `Score ${Math.round(score)}. Look away, blink fully, or start a ritual.`,
+            "aura-hold"
+          );
+        }
+      } else {
+        fatigueSince.current = null;
+        setFatigueHold(0);
+        document.title = "AURA — Fatigue Detection";
+      }
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     if (!running || !sessionId) return undefined;
     const tick = async () => {
       const snapshot = liveRef.current;
@@ -167,6 +202,7 @@ export default function Monitor() {
         setPred(out);
         if (out.intervention && !offerRef.current && !ritualRef.current && performance.now() - lastBreak.current > 20000) {
           setOffer(out.intervention);
+          playRitualChime();
           pushRitual(out.intervention);
         } else if (
           out.fatigue_score >= 52 &&
@@ -218,20 +254,59 @@ export default function Monitor() {
           <button
             className="btn btn-gold"
             onClick={async () => {
+              unlockAudio();
               const ok = await testWindowsAlert();
+              playFatigueBeep(false);
               setAlertState(typeof Notification !== "undefined" ? Notification.permission : "denied");
               if (!ok) {
                 window.alert("Allow notifications for this site in Chrome (lock icon in the address bar), and in Windows Settings → System → Notifications → Google Chrome.");
               }
             }}
           >
-            Test Windows popup
+            Test beep + Windows
           </button>
-          <button className={running ? "btn btn-danger" : "btn btn-gold"} onClick={() => setRunning((v) => !v)}>
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              const next = !sound;
+              setSoundOn(next);
+              setSound(next);
+              unlockAudio();
+              if (next) playFatigueBeep(false);
+            }}
+          >
+            Sound {sound ? "on" : "off"}
+          </button>
+          <button
+            className={running ? "btn btn-danger" : "btn btn-gold"}
+            onClick={() => {
+              if (running) {
+                setRecap({
+                  minutes: ((performance.now() - startedAt.current) / 60000).toFixed(1),
+                  peak: pred?.fatigue_score ?? 0,
+                  blinks: blinkTotal.current,
+                });
+              }
+              setRunning((v) => !v);
+            }}
+          >
             {running ? "Pause" : "Resume"}
           </button>
         </div>
       </div>
+
+      {fatigueHold >= 8 && (
+        <div className={`card ${fatigueHold >= 30 ? "hold-hot" : ""}`} style={{ marginBottom: 14 }}>
+          <strong>
+            Fatigue held {Math.floor(fatigueHold / 60)}:{String(Math.floor(fatigueHold % 60)).padStart(2, "0")}
+          </strong>
+          <p className="muted">
+            {fatigueHold >= 30
+              ? "Beep + Windows toast every 30s until you pause, blink, or take a ritual."
+              : "If this stays high for 30 seconds, AURA will beep and pop a Windows notification."}
+          </p>
+        </div>
+      )}
 
       <div className="monitor">
         <div>
@@ -307,6 +382,19 @@ export default function Monitor() {
           onDone={() => feedback("completed")}
           onSkip={() => feedback("skipped")}
         />
+      )}
+      {recap && (
+        <div className="overlay" onClick={() => setRecap(null)}>
+          <div className="ritual" onClick={(e) => e.stopPropagation()}>
+            <div className="cat">session recap</div>
+            <h2>You were in frame {recap.minutes} min</h2>
+            <p className="cue">Peak score {Math.round(recap.peak)} · blinks counted {recap.blinks}</p>
+            <p className="muted">A short walk or water now will land better than another tab.</p>
+            <div className="overlay-actions">
+              <button className="btn btn-gold" onClick={() => setRecap(null)}>Close</button>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

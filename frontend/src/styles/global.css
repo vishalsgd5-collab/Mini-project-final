@@ -328,6 +328,10 @@ img { max-width: 100%; display: block; }
   transform: scaleX(-1);
 }
 .stage canvas { z-index: 2; }
+.hold-hot {
+  border-color: var(--coral) !important;
+  box-shadow: 0 0 0 1px rgba(224, 138, 106, 0.35);
+}
 .cam-gate {
   position: absolute;
   inset: 0;

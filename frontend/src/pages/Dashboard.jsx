@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import { api } from "../api";
+import { exportReadingsCsv } from "../lib/localEngine";
 
 const tip = {
   contentStyle: {
@@ -62,7 +63,18 @@ export default function Dashboard() {
           <h1>Daily pulse</h1>
           <p>{data.insight}</p>
         </div>
-        <span className="pill live">live camera only</span>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span className="pill live">live camera only</span>
+          <button
+            className="btn btn-ghost"
+            onClick={() => {
+              const n = exportReadingsCsv();
+              if (!n) window.alert("No live samples to export yet. Sit in Live iris first.");
+            }}
+          >
+            Export CSV
+          </button>
+        </div>
       </div>
 
       {empty && (

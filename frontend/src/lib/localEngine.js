@@ -295,3 +295,26 @@ export function localApi(path, { method = "GET", body } = {}) {
 
   throw new Error(`Unknown local route ${path}`);
 }
+
+export function exportReadingsCsv() {
+  const db = store();
+  const header = "time,score,level,blink_rate,perclos,typing_rpm,screen_min";
+  const lines = db.readings.map((r) =>
+    [
+      r.ts,
+      r.fatigue_score,
+      r.level,
+      r.blink_rate,
+      r.perclos,
+      r.typing_rpm ?? "",
+      r.continuous_screen_min ?? "",
+    ].join(",")
+  );
+  const blob = new Blob([[header, ...lines].join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `aura-live-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  return db.readings.length;
+}

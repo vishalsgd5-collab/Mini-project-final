@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { enableAlerts } from "../lib/notify";
+import { isSoundOn, playFatigueBeep, setSoundOn, unlockAudio } from "../lib/sound";
 
 export default function Settings() {
   const { user, setUser } = useAuth();
@@ -15,6 +16,7 @@ export default function Settings() {
     enable_mouse: user.enable_mouse,
   });
   const [msg, setMsg] = useState("");
+  const [sound, setSound] = useState(isSoundOn());
 
   function set(key, value) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -50,17 +52,34 @@ export default function Settings() {
           <li>Click Enable desktop alerts below, and Allow the camera on Live iris</li>
           <li>Keep that tab open (minimized is fine). Rituals then appear on YouTube, Gmail, docs — and as a Windows toast over Word or Zoom</li>
         </ol>
-        <button
-          className="btn btn-gold"
-          type="button"
-          onClick={async () => {
-            const { testWindowsAlert } = await import("../lib/notify");
-            const ok = await testWindowsAlert();
-            if (!ok) window.alert("Allow notifications in Chrome (address-bar lock icon) and Windows Settings → Notifications → Google Chrome.");
-          }}
-        >
-          Test Windows popup
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          <button
+            className="btn btn-gold"
+            type="button"
+            onClick={async () => {
+              unlockAudio();
+              const { testWindowsAlert } = await import("../lib/notify");
+              playFatigueBeep(false);
+              const ok = await testWindowsAlert();
+              if (!ok) window.alert("Allow notifications in Chrome (address-bar lock icon) and Windows Settings → Notifications → Google Chrome.");
+            }}
+          >
+            Test beep + Windows popup
+          </button>
+          <button
+            className="btn btn-ghost"
+            type="button"
+            onClick={() => {
+              const next = !sound;
+              setSoundOn(next);
+              setSound(next);
+              unlockAudio();
+              if (next) playFatigueBeep(false);
+            }}
+          >
+            Fatigue beep {sound ? "on" : "off"}
+          </button>
+        </div>
       </div>
 
       <form className="settings" onSubmit={save}>
