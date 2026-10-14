@@ -67,11 +67,13 @@ export default function Monitor() {
   );
   const [extTyping, setExtTyping] = useState({ wpm: 0, rpm: 0 });
   const [sound, setSound] = useState(isSoundOn());
+  const [hint, setHint] = useState("");
   const [fatigueHold, setFatigueHold] = useState(0);
   const [recap, setRecap] = useState(null);
   const lastFatiguePing = useRef(0);
   const fatigueSince = useRef(null);
   const lastBeep = useRef(0);
+  const snoozeUntil = useRef(0);
   const predRef = useRef(null);
   const startedAt = useRef(performance.now());
   const lastBreak = useRef(0);
@@ -113,6 +115,32 @@ export default function Monitor() {
       }
     };
     window.addEventListener("message", onTypeMsg);
+    const flash = (msg) => {
+      setHint(msg);
+      window.setTimeout(() => setHint(""), 2200);
+    };
+    const onKey = (e) => {
+      if (e.repeat) return;
+      const tag = (e.target && e.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "F8") {
+        e.preventDefault();
+        const next = !isSoundOn();
+        setSoundOn(next);
+        setSound(next);
+        unlockAudio();
+        flash(next ? "Beep ON — F8 to mute" : "Beep OFF — F8 to turn back on. Windows toasts stay on.");
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        snoozeUntil.current = performance.now() + 5 * 60 * 1000;
+        fatigueSince.current = null;
+        setFatigueHold(0);
+        flash("Snoozed 5 minutes — Esc again later if needed.");
+      }
+    };
+    window.addEventListener("keydown", onKey);
     let id;
     (async () => {
       const s = await api("/api/sessions/start", { method: "POST" });
@@ -123,6 +151,7 @@ export default function Monitor() {
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("message", onTypeMsg);
+      window.removeEventListener("keydown", onKey);
       try {
         lock?.release?.();
       } catch {
@@ -147,12 +176,12 @@ export default function Monitor() {
         const held = (performance.now() - fatigueSince.current) / 1000;
         setFatigueHold(held);
         document.title = `AURA · ${Math.round(score)} · ${Math.floor(held)}s fatigue`;
-        if (held >= 30 && performance.now() - lastBeep.current > 30000) {
+        if (held >= 30 && performance.now() - lastBeep.current > 30000 && performance.now() > snoozeUntil.current) {
           lastBeep.current = performance.now();
           playFatigueBeep(score >= 75);
           pushWindows(
             `AURA · fatigue for ${Math.floor(held)} seconds`,
-            `Score ${Math.round(score)}. Look away, blink fully, or start a ritual.`,
+            `Score ${Math.round(score)}. Look away, blink fully, or take a ritual. Press F8 to mute the beep.`,
             "aura-hold"
           );
         }
@@ -248,7 +277,10 @@ export default function Monitor() {
       <div className="topbar">
         <div>
           <h1>Live iris</h1>
-          <p>Leave this tab open for background care. Graphs only store a live camera lock — not lab mode.</p>
+          <p>
+            <b>F8</b> mutes the beep (Windows toasts stay on). <b>Esc</b> snoozes 5 minutes.
+            Leave this tab open so the camera can run.
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
@@ -295,6 +327,34 @@ export default function Monitor() {
         </div>
       </div>
 
+      {alertState !== "granted" && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "var(--gold)" }}>
+          <strong>Windows notifications are off</strong>
+          <p className="muted">
+            Chrome must be allowed to send toasts. Click the button, then Allow. Also check
+            Windows Settings → System → Notifications → Google Chrome.
+          </p>
+          <button
+            className="btn btn-gold"
+            style={{ marginTop: 10 }}
+            onClick={async () => {
+              unlockAudio();
+              const ok = await testWindowsAlert();
+              setAlertState(typeof Notification !== "undefined" ? Notification.permission : "denied");
+              if (!ok) {
+                window.alert("Blocked. Click the lock icon in the address bar → Notifications → Allow.");
+              }
+            }}
+          >
+            Allow Windows notifications
+          </button>
+        </div>
+      )}
+      {hint && (
+        <div className="card" style={{ marginBottom: 14 }}>
+          <strong>{hint}</strong>
+        </div>
+      )}
       {fatigueHold >= 8 && (
         <div className={`card ${fatigueHold >= 30 ? "hold-hot" : ""}`} style={{ marginBottom: 14 }}>
           <strong>
@@ -350,7 +410,7 @@ export default function Monitor() {
             <div className="metric"><small>Typing speed</small><b>{Math.max(activity.typingWpm || 0, extTyping.wpm || 0)} WPM</b></div>
             <div className="metric"><small>Keys / min</small><b>{Math.max(activity.typingRpm || 0, extTyping.rpm || 0)}</b></div>
             <div className="metric"><small>Session</small><b>{(((performance.now() - startedAt.current) / 60000).toFixed(0))}m</b></div>
-            <div className="metric"><small>Windows alerts</small><b>{alertState === "granted" ? "ON" : "OFF"}</b></div>
+            <div className="metric"><small>Beep (F8)</small><b>{sound ? "ON" : "MUTE"}</b></div>
           </div>
           <div className="drivers">
             {(pred?.drivers || []).map((d) => (

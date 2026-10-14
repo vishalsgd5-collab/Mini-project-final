@@ -2,8 +2,12 @@ let swReady = null;
 
 export function registerGuardian() {
   if (!("serviceWorker" in navigator)) return;
-  const url = new URL("sw.js", window.location.href);
-  swReady = navigator.serviceWorker.register(url.href).catch(() => null);
+  try {
+    const url = new URL("sw.js", window.location.href.split("#")[0]);
+    swReady = navigator.serviceWorker.register(url.href, { scope: "./" }).catch(() => null);
+  } catch {
+    swReady = null;
+  }
 }
 
 export async function enableAlerts() {
@@ -17,10 +21,43 @@ export async function enableAlerts() {
   return true;
 }
 
+function iconUrl() {
+  try {
+    return new URL("icon128.png", window.location.href.split("#")[0]).href;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Always try the classic Notification API — that is what Windows shows in the corner. */
 export async function pushWindows(title, body, tag = "aura") {
-  const ok = typeof Notification !== "undefined" && Notification.permission === "granted";
-  if (!ok) return false;
-  const icon = new URL("icon128.png", window.location.href).href;
+  if (typeof Notification === "undefined") return false;
+  if (Notification.permission !== "granted") {
+    try {
+      const p = await Notification.requestPermission();
+      if (p !== "granted") return false;
+    } catch {
+      return false;
+    }
+  }
+  const icon = iconUrl();
+  let shown = false;
+  try {
+    const n = new Notification(title, {
+      body,
+      tag,
+      icon,
+      requireInteraction: true,
+      silent: false,
+    });
+    n.onclick = () => {
+      window.focus();
+      n.close();
+    };
+    shown = true;
+  } catch {
+    /* continue */
+  }
   try {
     const reg = await navigator.serviceWorker?.ready;
     if (reg?.showNotification) {
@@ -28,25 +65,15 @@ export async function pushWindows(title, body, tag = "aura") {
         body,
         tag,
         icon,
-        badge: icon,
         requireInteraction: true,
         silent: false,
       });
-      return true;
+      shown = true;
     }
   } catch {
-    /* fall through */
+    /* ignore */
   }
-  try {
-    const n = new Notification(title, { body, tag, icon, requireInteraction: true, silent: false });
-    n.onclick = () => {
-      window.focus();
-      n.close();
-    };
-    return true;
-  } catch {
-    return false;
-  }
+  return shown;
 }
 
 export async function pushRitual(item) {
@@ -66,8 +93,8 @@ export async function testWindowsAlert() {
   const granted = await enableAlerts();
   if (!granted) return false;
   return pushWindows(
-    "AURA · Windows alert is on",
-    "This toast should appear in the Windows notification corner — not only on the website.",
+    "AURA · Windows notification",
+    "Look at the bottom-right of your screen — this should be a Windows toast, not only a website banner.",
     "aura-test"
   );
 }
