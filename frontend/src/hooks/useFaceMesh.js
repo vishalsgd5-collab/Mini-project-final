@@ -9,6 +9,7 @@ import {
   poseFromMatrix,
   slouchFromPose,
 } from "../lib/vision";
+import { FaceActionTracker, blendMap } from "../lib/faceActions";
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
@@ -50,10 +51,8 @@ async function openCamera() {
   throw last || new Error("Camera unavailable");
 }
 
-function blendScore(result) {
-  const cats = result.faceBlendshapes?.[0]?.categories || [];
-  const pick = (name) => cats.find((c) => c.categoryName === name)?.score || 0;
-  return (pick("eyeBlinkLeft") + pick("eyeBlinkRight")) / 2;
+function blendScore(blends) {
+  return ((blends.eyeBlinkLeft || 0) + (blends.eyeBlinkRight || 0)) / 2;
 }
 
 export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false }) {
@@ -79,6 +78,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
   const raf = useRef(0);
   const blinker = useRef(new BlinkTracker());
   const yawner = useRef(new YawnTracker());
+  const actor = useRef(new FaceActionTracker());
   const lastTs = useRef(0);
   const frames = useRef(0);
   const fpsAt = useRef(performance.now());
@@ -151,6 +151,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
         landmarker.current = lm;
         blinker.current = new BlinkTracker();
         yawner.current = new YawnTracker();
+        actor.current = new FaceActionTracker();
         setStatus("live");
         loop();
       } catch (err) {
@@ -182,11 +183,21 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
           blinker.current.setGlasses(glassesRef.current);
           const ear = bothEars(face);
           const mar = mouthAspect(face);
-          const bscore = blendScore(result);
+          const blends = blendMap(result);
+          const bscore = blendScore(blends);
           const matrix = result.facialTransformationMatrixes?.[0]?.data;
           const pose = matrix ? poseFromMatrix(matrix) : poseFromLandmarks(face);
           const blink = blinker.current.push(ear.avg, now, bscore);
           const yawns = yawner.current.push(mar, now);
+          const actions = actor.current.push({
+            closed: blink.closed,
+            blinked: blink.blinked,
+            mar,
+            pitch: pose.pitch,
+            yaw: pose.yaw,
+            blends,
+            now,
+          });
           if (ctx) {
             drawOverlay(ctx, canvas.width, canvas.height, face, { ...ear, closed: blink.closed, openBaseline: blink.openBaseline }, pose);
           }
@@ -218,6 +229,10 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             glassesLikely: blink.glassesLikely,
             calibrating: blink.calibrating,
             closed: blink.closed,
+            actions: actions.events,
+            actionCounts: actions.counts,
+            attention: actions.attention,
+            closedMs: actions.closedMs,
           }));
         } else if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);

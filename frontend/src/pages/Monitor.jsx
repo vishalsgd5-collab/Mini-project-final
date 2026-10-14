@@ -8,6 +8,7 @@ import Wave from "../components/Wave";
 import { Offer, Ritual } from "../components/Intervention";
 import { useActivity } from "../hooks/useActivity";
 import { useFaceMesh } from "../hooks/useFaceMesh";
+import { startGuardian } from "../lib/pip";
 
 function useLabLive(active) {
   const [live, setLive] = useState(null);
@@ -181,7 +182,12 @@ export default function Monitor() {
         const held = (performance.now() - fatigueSince.current) / 1000;
         setFatigueHold(held);
         document.title = `AURA · ${Math.round(score)} · ${Math.floor(held)}s fatigue`;
-        if (held >= 30 && performance.now() - lastBeep.current > 30000 && performance.now() > snoozeUntil.current) {
+        const microsleep = (liveRef.current?.closedMs || 0) > 1000;
+        if (
+          (held >= 30 || microsleep) &&
+          performance.now() - lastBeep.current > (microsleep ? 8000 : 30000) &&
+          performance.now() > snoozeUntil.current
+        ) {
           lastBeep.current = performance.now();
           const ok = playFatigueBeep(score >= 75);
           setFlash(true);
@@ -337,6 +343,26 @@ export default function Monitor() {
             Calibrate eyes
           </button>
           <button
+            className="btn btn-gold"
+            onClick={async () => {
+              try {
+                await startGuardian({
+                  video: videoRef.current,
+                  getHud: () => ({
+                    score: Math.round(predRef.current?.fatigue_score ?? 0),
+                    level: predRef.current?.level || "alert",
+                    line: `${Math.round(liveRef.current?.attention ?? 100)} attention · ${Math.round(liveRef.current?.blinkRate || 0)} blinks/min`,
+                  }),
+                });
+                setHint("Guardian floating over other apps. Keep this tab open in the background.");
+              } catch (e) {
+                setHint(e.message || "Could not float window. Use Chrome, then try again.");
+              }
+            }}
+          >
+            Float over apps
+          </button>
+          <button
             className={running ? "btn btn-danger" : "btn btn-gold"}
             onClick={() => {
               if (running) {
@@ -447,6 +473,20 @@ export default function Monitor() {
             <div className="metric"><small>Keys / min</small><b>{Math.max(activity.typingRpm || 0, extTyping.rpm || 0)}</b></div>
             <div className="metric"><small>Session</small><b>{(((performance.now() - startedAt.current) / 60000).toFixed(0))}m</b></div>
             <div className="metric"><small>Beep (F8)</small><b>{sound ? "ON" : "MUTE"}</b></div>
+            <div className="metric"><small>Attention</small><b>{live?.attention ?? "—"}</b></div>
+            <div className="metric"><small>Microsleeps</small><b>{live?.actionCounts?.microsleep ?? 0}</b></div>
+          </div>
+          <div className="card" style={{ padding: 12 }}>
+            <div className="cat">Face actions (live)</div>
+            {(live?.actions || []).length === 0 && (
+              <p className="muted" style={{ marginTop: 6 }}>Blink, yawn, look away, nod — every gesture is logged here.</p>
+            )}
+            {(live?.actions || []).slice(0, 6).map((a, i) => (
+              <div className="break-row" key={a.t + i}>
+                <span>{a.label}</span>
+                <span className="tag">{new Date(a.t).toLocaleTimeString()}</span>
+              </div>
+            ))}
           </div>
           <div className="drivers">
             {(pred?.drivers || []).map((d) => (
