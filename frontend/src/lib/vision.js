@@ -225,20 +225,11 @@ export function drawOverlay(ctx, w, h, landmarks, ear, pose) {
       else ctx.lineTo(x, y);
     });
     ctx.closePath();
-    ctx.strokeStyle = closed ? "rgba(224, 138, 106, 0.95)" : "rgba(143, 184, 154, 0.9)";
-    ctx.lineWidth = closed ? 2.4 : 1.6;
+    ctx.strokeStyle = closed ? "rgba(224, 90, 80, 0.95)" : "rgba(143, 184, 154, 0.9)";
+    ctx.lineWidth = closed ? 2.2 : 1.6;
     ctx.stroke();
     if (closed) {
-      const cx = (pts.reduce((s, p) => s + p.x, 0) / pts.length) * w;
-      const cy = (pts.reduce((s, p) => s + p.y, 0) / pts.length) * h;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 11, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(224, 80, 70, 0.95)";
-      ctx.lineWidth = 2.5;
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-      ctx.fillStyle = "rgba(224, 80, 70, 0.85)";
+      ctx.fillStyle = "rgba(210, 70, 65, 0.45)";
       ctx.fill();
     }
   };
