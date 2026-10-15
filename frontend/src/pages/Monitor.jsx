@@ -212,7 +212,7 @@ export default function Monitor() {
     const id = setInterval(() => {
       const score = predRef.current?.fatigue_score ?? 0;
       const watching = statusRef.current === "live" || statusRef.current === "lab";
-      if (runningRef.current && watching && score >= 50) {
+      if (runningRef.current && watching && score >= 75) {
         if (!fatigueSince.current) fatigueSince.current = performance.now();
         const held = (performance.now() - fatigueSince.current) / 1000;
         setFatigueHold(held);
@@ -557,12 +557,12 @@ export default function Monitor() {
       {fatigueHold >= 8 && (
         <div className={`card ${fatigueHold >= 30 ? "hold-hot" : ""}`} style={{ marginBottom: 14 }}>
           <strong>
-            Fatigue held {Math.floor(fatigueHold / 60)}:{String(Math.floor(fatigueHold % 60)).padStart(2, "0")}
+            Fatigue ≥75 held {Math.floor(fatigueHold / 60)}:{String(Math.floor(fatigueHold % 60)).padStart(2, "0")}
           </strong>
           <p className="muted">
             {fatigueHold >= 30
               ? "Beep + Windows toast every 30s until you pause, blink, or take a ritual."
-              : "If this stays high for 30 seconds, AURA will beep and pop a Windows notification."}
+              : "If the score stays at 75 or above for 30 seconds, AURA will beep and pop a Windows notification."}
           </p>
         </div>
       )}
