@@ -395,7 +395,7 @@ export default function Monitor() {
     <>
       <div className="topbar">
         <div>
-          <h1>Live iris</h1>
+          <h1>Aura</h1>
           <p>
             <b>F8</b> mutes the beep (Windows toasts stay on). <b>Esc</b> snoozes 5 minutes.
             Leave this tab open (or use Float over apps) so the camera watches you on other sites.

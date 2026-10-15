@@ -16,7 +16,7 @@ export default function Layout() {
           <IconMark />
         </NavLink>
         <nav>
-          <NavLink to="/app/monitor" title="Live monitor" className={({ isActive }) => (isActive ? "active" : "")}>
+          <NavLink to="/app/monitor" title="Aura" className={({ isActive }) => (isActive ? "active" : "")}>
             <IconEye />
           </NavLink>
           <NavLink to="/app/dashboard" title="Wellness pulse" className={({ isActive }) => (isActive ? "active" : "")}>
