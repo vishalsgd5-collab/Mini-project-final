@@ -54,7 +54,7 @@ export async function pushWindows(title, body, tag = "aura") {
       window.focus();
       n.close();
     };
-    shown = true;
+    return true;
   } catch {
     /* continue */
   }

@@ -27,13 +27,19 @@
     const data = event.data;
     if (!data || !data.type) return;
     if (
+      data.type === "AURA_SCHEDULE_SYNC" ||
       data.type === "AURA_RITUAL" ||
       data.type === "AURA_LIVE" ||
       data.type === "AURA_BEEP" ||
       data.type === "AURA_STOP_BEEP"
     ) {
       try {
-        chrome.runtime.sendMessage(data);
+        chrome.runtime.sendMessage(data, (reply) => {
+          if (chrome.runtime.lastError) return;
+          if (data.type === "AURA_SCHEDULE_SYNC" && reply?.ok) {
+            window.postMessage({ type: "AURA_SCHEDULE_ACK", items: reply.items }, window.location.origin);
+          }
+        });
       } catch {
         /* extension context invalidated */
       }
@@ -41,6 +47,10 @@
   });
 
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "AURA_SCHEDULE_ACK") {
+      window.postMessage(msg, window.location.origin);
+    }
+    if (msg?.type === "AURA_SCHEDULE_DUE") showOverlay({ title: msg.item.title, category: "scheduled reminder", cue: msg.item.note || "Your scheduled task is due.", duration_sec: 0 });
     if (msg?.type === "AURA_RITUAL" && msg.item) showOverlay(msg.item);
     if (msg?.type === "AURA_LIVE" && msg.metrics) paintHud(msg.metrics);
     if (msg?.type === "AURA_TYPING") {

@@ -7,7 +7,7 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const nav = useNavigate();
   const initial = (user?.name || "A").slice(0, 1).toUpperCase();
-  useEmberReminders();
+  const { reminder, dismissReminder } = useEmberReminders();
 
   return (
     <div className="shell">
@@ -44,6 +44,13 @@ export default function Layout() {
           <div className="avatar">{initial}</div>
         </button>
       </aside>
+      {reminder && <aside role="alert" className="card" style={{ position: "fixed", right: 20, bottom: 20, zIndex: 9999, maxWidth: 360 }}>
+        <div className="kicker">Ember Docket · due now</div>
+        <h3>{reminder.title}</h3>
+        <p>{reminder.note || "Your scheduled task is ready."}</p>
+        <button className="btn btn-gold" onClick={() => { dismissReminder(); nav("/app/docket"); }}>View schedule</button>
+        <button className="btn btn-ghost" onClick={dismissReminder}>Dismiss</button>
+      </aside>}
       <div className="main">
         <Outlet />
       </div>

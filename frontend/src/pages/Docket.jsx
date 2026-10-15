@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { tellBeep } from "../lib/bridge";
-import { loadDocket, newItem, saveDocket } from "../lib/docket";
+import { connectSchedule, dueSoon, loadDocket, newItem, saveDocket, scheduleManaged } from "../lib/docket";
 import { enableAlerts, pushWindows } from "../lib/notify";
 import { playRitualChime, unlockAudio } from "../lib/sound";
 
@@ -21,10 +20,16 @@ function fmt(when) {
 export default function Docket() {
   const [items, setItems] = useState(() => loadDocket());
   const [draft, setDraft] = useState(() => newItem());
+  const [message, setMessage] = useState("");
+  const [guardian, setGuardian] = useState(false);
   const [filter, setFilter] = useState("open");
 
   useEffect(() => {
-    enableAlerts();
+    const refresh = () => { setItems(loadDocket()); setGuardian(scheduleManaged()); };
+    window.addEventListener("aura-docket", refresh);
+    window.addEventListener("storage", refresh);
+    refresh();
+    return () => { window.removeEventListener("aura-docket", refresh); window.removeEventListener("storage", refresh); };
   }, []);
 
   function commit(next) {
@@ -36,18 +41,22 @@ export default function Docket() {
     e.preventDefault();
     const title = draft.title.trim();
     if (!title) return;
+    if (!draft.when || !Number.isFinite(new Date(draft.when).getTime()) || new Date(draft.when).getTime() <= Date.now()) {
+      setMessage("Choose a future date and time for your reminder."); return;
+    }
+    setMessage("Reminder saved. Date and time use your computer’s local timezone.");
     unlockAudio();
     playRitualChime();
-    commit([newItem({ ...draft, title }), ...items]);
+    commit([newItem({ ...draft, title, notified: false }), ...loadDocket().filter(it => it.id !== draft.id)]);
     setDraft(newItem({ tag: draft.tag }));
   }
 
   function toggle(id) {
-    commit(items.map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
+    commit(loadDocket().map((it) => (it.id === id ? { ...it, done: !it.done } : it)));
   }
 
   function remove(id) {
-    commit(items.filter((it) => it.id !== id));
+    commit(loadDocket().filter((it) => it.id !== id));
   }
 
   const shown = useMemo(() => {
@@ -79,13 +88,24 @@ export default function Docket() {
           <div className="kicker" style={{ marginBottom: 6 }}>care schedule</div>
           <h1>Ember Docket</h1>
           <p>
-            A private slate for the hours you still owe yourself. Due items ping with the same AURA beep and a Windows
-            toast — even if you are in another tab.
+            Schedule a task by date and time. Windows reminders can appear over other apps while Chrome is running.
           </p>
         </div>
         <span className="chip">{openCount} open</span>
       </div>
 
+      <div className="card" style={{ marginBottom: 20 }}>
+        <strong>{guardian ? "Guardian connected · background scheduling active" : "Browser reminders · keep AURA open"}</strong>
+        <p className="muted">Install/reload AURA Guardian and refresh this page to receive reminders even after closing the AURA tab. Keep Chrome running. Enable Windows Settings → System → Notifications → Chrome, and turn off Do Not Disturb. Windows chooses the toast screen; this cannot force a popup onto every monitor or secure/full-screen application.</p>
+        <button className="btn btn-gold" type="button" onClick={async () => {
+          unlockAudio();
+          const allowed = await enableAlerts();
+          playRitualChime();
+          const shown = allowed && await pushWindows("Ember Docket · reminder test", "Scheduled reminders appear here while you work in other apps.", "ember-test");
+          setMessage(shown ? "Test sent — check Windows notifications." : "Allow notifications in Chrome site settings, then test again.");
+        }}>Enable / test Windows reminders</button>
+        {message && <p role="status">{message}</p>}
+      </div>
       <div className="docket">
         <form className="card docket-form" onSubmit={add}>
           <div className="cat">new ember</div>
@@ -101,10 +121,11 @@ export default function Docket() {
           </div>
           <div className="docket-row">
             <div className="field">
-              <label htmlFor="ember-when">When</label>
+              <label htmlFor="ember-when">Reminder date &amp; time (local)</label>
               <input
                 id="ember-when"
                 type="datetime-local"
+                required
                 value={draft.when}
                 onChange={(e) => setDraft((d) => ({ ...d, when: e.target.value }))}
               />
@@ -134,7 +155,7 @@ export default function Docket() {
             />
           </div>
           <button className="btn btn-gold" type="submit" style={{ marginTop: 16 }}>
-            Add to Ember Docket
+            Save scheduled reminder
           </button>
         </form>
 
@@ -177,6 +198,9 @@ export default function Docket() {
                   </div>
                   <h3>{it.title}</h3>
                   {it.note && <p className="muted">{it.note}</p>}
+                  <p className="muted">{it.done ? "Completed" : it.notified ? "Reminder delivered" : "Scheduled"}</p>
+                  <button type="button" className="btn btn-ghost" onClick={() => setDraft({ ...it, notified: false })}>Edit / reschedule</button>
+                  {!it.done && <button type="button" className="btn btn-ghost" onClick={() => commit(loadDocket().map(row => row.id === it.id ? { ...row, when: new Date(Date.now() + 5 * 60000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16), notified: false } : row))}>Remind in 5 min</button>}
                 </div>
                 <button type="button" className="btn btn-ghost" onClick={() => remove(it.id)}>
                   Drop
@@ -191,24 +215,30 @@ export default function Docket() {
 }
 
 export function useEmberReminders() {
+  const [reminder, setReminder] = useState(null);
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const disconnect = connectSchedule();
+    const tick = () => {
+      if (scheduleManaged()) return;
       const items = loadDocket();
       const now = Date.now();
       let changed = false;
       const next = items.map((it) => {
-        if (it.done || it.notified || !it.when) return it;
-        const t = new Date(it.when).getTime();
-        if (!Number.isFinite(t) || t > now + 8000) return it;
+        if (!dueSoon(it, now)) return it;
         changed = true;
+        setReminder(it);
         unlockAudio();
         playRitualChime();
-        tellBeep("docket", false);
-        pushWindows("Ember Docket · due now", it.title, `ember-${it.id}`);
+
+        pushWindows("Ember Docket · due now", `${it.title}${it.note ? " — " + it.note : ""}`, `ember-${it.id}`);
         return { ...it, notified: true };
       });
       if (changed) saveDocket(next);
-    }, 8000);
-    return () => window.clearInterval(id);
+    };
+    const id = window.setInterval(tick, 1000);
+    const catchUp = () => tick();
+    window.addEventListener("focus", catchUp);
+    return () => { disconnect(); window.clearInterval(id); window.removeEventListener("focus", catchUp); };
   }, []);
+  return { reminder, dismissReminder: () => setReminder(null) };
 }
