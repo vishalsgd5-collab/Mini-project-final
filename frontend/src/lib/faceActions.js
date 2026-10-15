@@ -1,5 +1,7 @@
 /** Continuous face-action detector — blinks, microsleep, yawn, gaze, head-drop, squint. */
 
+import { YawnDetector } from "./yawn.js";
+
 const LABELS = {
   blink: "Blink",
   microsleep: "Microsleep (eyes shut >1s)",
@@ -19,6 +21,7 @@ export function blendMap(result) {
 
 export class FaceActionTracker {
   constructor() {
+    this.yawnDetector = new YawnDetector();
     this.events = [];
     this.counts = { blink: 0, microsleep: 0, yawn: 0, lookAway: 0, headDrop: 0, squint: 0, nod: 0 };
     this.closedSince = null;
@@ -51,13 +54,11 @@ export class FaceActionTracker {
       this.fired.microsleep = false;
     }
 
-    const yawning = mar > 0.45 || jaw > 0.45;
-    if (yawning && !this.fired.yawn) {
-      this.fired.yawn = true;
-      this.counts.yawn += 1;
+    const yawn = this.yawnDetector.push(mar, jaw, now);
+    if (yawn.detected) {
+      this.counts.yawn = yawn.count;
       fresh.push("yawn");
     }
-    if (!yawning) this.fired.yawn = false;
 
     const away = Math.abs(yaw) > 22 || lookDown > 0.45;
     if (away) {
@@ -100,7 +101,7 @@ export class FaceActionTracker {
     if (squint < 0.2) this.fired.squint = false;
 
     if (fresh.length) {
-      const stamped = fresh.map((type) => ({ type, label: LABELS[type] || type, t: now }));
+      const stamped = fresh.map((type) => ({ type, label: LABELS[type] || type, t: Date.now() }));
       this.events = [...stamped, ...this.events].slice(0, 14);
     }
 
@@ -118,6 +119,7 @@ export class FaceActionTracker {
     );
 
     return {
+      yawn,
       events: this.events,
       counts: { ...this.counts },
       attention: Math.round(attention),

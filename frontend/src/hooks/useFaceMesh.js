@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BlinkTracker,
-  YawnTracker,
   bothEars,
   drawOverlay,
   eyeIsClosed,
@@ -167,7 +166,6 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
   const landmarker = useRef(null);
   const raf = useRef(0);
   const blinker = useRef(new BlinkTracker());
-  const yawner = useRef(new YawnTracker());
   const actor = useRef(new FaceActionTracker());
   const lastTs = useRef(0);
   const frames = useRef(0);
@@ -236,7 +234,6 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
         }
         if (cancelled) return;
         blinker.current = new BlinkTracker();
-        yawner.current = new YawnTracker();
         actor.current = new FaceActionTracker();
         loop();
       } catch (err) {
@@ -282,7 +279,6 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
           const glasses = glassesRef.current || blink.glassesLikely;
           const leftClosed = eyeIsClosed(ear.left, blink.openBaseline, blends.eyeBlinkLeft || 0, glasses);
           const rightClosed = eyeIsClosed(ear.right, blink.openBaseline, blends.eyeBlinkRight || 0, glasses);
-          const yawns = yawner.current.push(mar, now);
           const actions = actor.current.push({
             closed: blink.closed,
             blinked: blink.blinked,
@@ -298,7 +294,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
               leftClosed,
               rightClosed,
               openBaseline: blink.openBaseline,
-            }, pose);
+            }, pose, { yawning: actions.yawn.active });
           }
           frames.current += 1;
           let fps = 0;
@@ -320,7 +316,11 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             yaw: pose.yaw,
             roll: pose.roll,
             mar,
-            yawns,
+            yawns: actions.yawn.recentCount,
+            jawOpen: blends.jawOpen || 0,
+            yawnActive: actions.yawn.active,
+            yawnPending: actions.yawn.pending,
+            mouthOpenMs: actions.yawn.openMs,
             slouch: slouchFromPose(pose.pitch, pose.roll),
             present: true,
             blinks: blink.blinks,
@@ -335,9 +335,10 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             attention: actions.attention,
             closedMs: actions.closedMs,
           }));
-        } else if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          setLive((s) => ({ ...s, present: false }));
+        } else {
+          actor.current.yawnDetector.resetCandidate();
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+          setLive((s) => ({ ...s, present: false, yawnActive: false, yawnPending: false, mouthOpenMs: 0, jawOpen: 0 }));
         }
       }
       raf.current = requestAnimationFrame(loop);

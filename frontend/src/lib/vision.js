@@ -1,3 +1,5 @@
+import { YawnDetector } from "./yawn.js";
+
 /** MediaPipe Face Mesh indices — aligned with backend/app/ml/ear.py */
 export const LEFT_EYE = [33, 160, 158, 133, 153, 144];
 export const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
@@ -171,32 +173,14 @@ export class BlinkTracker {
   }
 }
 
-export class YawnTracker {
-  constructor() {
-    this.open = false;
-    this.count = 0;
-    this.started = 0;
-    this.window = [];
-  }
-  push(mar, now = performance.now()) {
-    this.window = this.window.filter((t) => now - t < 10 * 60 * 1000);
-    if (mar > MAR_THRESH) {
-      if (!this.open) {
-        this.open = true;
-        this.started = now;
-      }
-    } else if (this.open) {
-      if (now - this.started > 350) {
-        this.count += 1;
-        this.window.push(now);
-      }
-      this.open = false;
-    }
-    return this.window.length;
+/** Compatibility adapter: all yawn counting uses the same sustained detector. */
+export class YawnTracker extends YawnDetector {
+  push(mar, now = performance.now(), jaw = 0) {
+    return super.push(mar, jaw, now).recentCount;
   }
 }
 
-export function drawOverlay(ctx, w, h, landmarks, ear, pose) {
+export function drawOverlay(ctx, w, h, landmarks, ear, pose, { yawning = false } = {}) {
   ctx.clearRect(0, 0, w, h);
   if (!landmarks) return;
 
@@ -213,6 +197,23 @@ export function drawOverlay(ctx, w, h, landmarks, ear, pose) {
   });
   ctx.closePath();
   ctx.stroke();
+
+  // Highlight the mouth only during a sustained yawn candidate, preserving per-eye rendering.
+  if (yawning) {
+    const contour = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95];
+    ctx.beginPath();
+    contour.forEach((index, n) => {
+      const point = landmarks[index];
+      if (n === 0) ctx.moveTo(point.x * w, point.y * h);
+      else ctx.lineTo(point.x * w, point.y * h);
+    });
+    ctx.closePath();
+    ctx.fillStyle = "rgba(241, 183, 83, 0.18)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(241, 183, 83, 0.95)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
 
   const drawEye = (idx, closed) => {
     const pts = idx.map((i) => landmarks[i]).filter(Boolean);

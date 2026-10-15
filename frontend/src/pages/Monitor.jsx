@@ -611,6 +611,10 @@ export default function Monitor() {
             <div className="metric"><small>Blinks / min</small><b>{(live?.blinkRate || 0).toFixed(0)}</b></div>
             <div className="metric"><small>PERCLOS</small><b>{(((live?.perclos || 0) * 100).toFixed(0))}%</b></div>
             <div className="metric"><small>Lid close (AI)</small><b>{(((live?.blinkScore || 0) * 100).toFixed(0))}%</b></div>
+            <div className="metric"><small>Mouth opening (MAR)</small><b>{live?.present ? (live.mar || 0).toFixed(2) : "—"}</b></div>
+            <div className="metric"><small>Jaw open (AI)</small><b>{live?.present ? `${Math.round((live.jawOpen || 0) * 100)}%` : "—"}</b></div>
+            <div className="metric"><small>Yawn candidates (session)</small><b>{live?.actionCounts?.yawn ?? 0}</b></div>
+            <div className="metric" role="status"><small>Yawn status</small><b>{!live?.present ? "No face" : live.yawnActive ? "Yawn detected" : live.yawnPending ? "Checking…" : "Monitoring"}</b></div>
             <div className="metric"><small>Your open EAR</small><b>{(live?.openBaseline || 0).toFixed(2)}</b></div>
             <div className="metric"><small>Head pitch</small><b>{(live?.pitch || 0).toFixed(0)}°</b></div>
             <div className="metric"><small>Slouch</small><b>{(((live?.slouch || 0) * 100).toFixed(0))}%</b></div>
@@ -623,6 +627,7 @@ export default function Monitor() {
           </div>
           <div className="card" style={{ padding: 12 }}>
             <div className="cat">Face actions (live)</div>
+            <p className="muted" style={{ marginTop: 6 }}>Yawn detection combines mouth opening and jaw signals: hold a wide opening for at least 1 second. Amber mouth outline = detected candidate. Speech or deliberate opening can also trigger it; this is not a confirmed medical yawn.</p>
             {(live?.actions || []).length === 0 && (
               <p className="muted" style={{ marginTop: 6 }}>Blink, yawn, look away, nod — every gesture is logged here.</p>
             )}
