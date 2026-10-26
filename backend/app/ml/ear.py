@@ -5,7 +5,7 @@ pipeline (MediaPipe Face Mesh indices) so Python tooling stays aligned.
 
 Left eye  : 33, 160, 158, 133, 153, 144
 Right eye : 362, 385, 387, 263, 373, 380
-Mouth     : 61, 81, 311, 291, 178, 402
+Mouth     : 61, 81, 311, 291, 402, 178
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import math
 
 LEFT_EYE = (33, 160, 158, 133, 153, 144)
 RIGHT_EYE = (362, 385, 387, 263, 373, 380)
-MOUTH = (61, 81, 311, 291, 178, 402)
+MOUTH = (61, 81, 311, 291, 402, 178)
 
 EAR_BLINK_THRESH = 0.21
 MAR_YAWN_THRESH = 0.55

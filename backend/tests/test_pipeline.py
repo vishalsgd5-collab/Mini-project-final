@@ -31,8 +31,9 @@ def test_mar_closed_mouth():
     pts[81] = (0.7, 0.05)
     pts[311] = (1.3, 0.05)
     pts[291] = (2, 0)
-    pts[178] = (1.3, -0.05)
-    pts[402] = (0.7, -0.05)
+    # Lower lip points must remain on the same side as their upper partners.
+    pts[178] = (0.7, -0.05)
+    pts[402] = (1.3, -0.05)
     assert mouth_aspect(pts) < 0.2
 
 

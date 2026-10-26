@@ -6,7 +6,9 @@ export const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
 /** Denser lids — more stable when spectacle frames hide a corner. */
 export const LEFT_EYE_DENSE = [33, 246, 161, 160, 159, 158, 157, 173, 133, 155, 154, 153, 145, 144, 163, 7];
 export const RIGHT_EYE_DENSE = [362, 398, 384, 385, 386, 387, 388, 466, 263, 249, 390, 373, 374, 380, 381, 382];
-export const MOUTH = [61, 81, 311, 291, 178, 402];
+// aspectRatio pairs p2↔p6 and p3↔p5: use the matching lower lip on each side.
+// Swapping 178/402 measures diagonals and keeps closed-mouth MAR falsely high.
+export const MOUTH = [61, 81, 311, 291, 402, 178];
 export const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
 export const EAR_THRESH = 0.21;

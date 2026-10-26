@@ -16,7 +16,7 @@ MediaPipe Face Mesh indices (identical in `frontend/src/lib/vision.js` and `back
 | --- | --- |
 | Left eye | 33, 160, 158, 133, 153, 144 |
 | Right eye | 362, 385, 387, 263, 373, 380 |
-| Mouth (MAR) | 61, 81, 311, 291, 178, 402 |
+| Mouth (MAR) | 61, 81, 311, 291, 402, 178 |
 
 MAR above **0.55** for ≥ 350 ms counts as a yawn.
 

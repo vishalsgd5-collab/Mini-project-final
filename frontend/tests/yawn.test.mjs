@@ -208,3 +208,68 @@ test('UI explicitly distinguishes paused detection, rearming, hold progress and 
   assert.equal(yawnStatusLabel({ present: true, yawnPending: true, mouthOpenMs: 900 }, false), 'Opening 0.9s / 1.5s');
   assert.equal(yawnStatusLabel({ present: true, yawnActive: true, yawnStatus: 'closing' }, false), 'Closing · confirming…');
 });
+
+// Use lip positions, not precomputed MAR constants: the old diagonal landmark
+// ordering could pass detector unit tests but never arm the live camera pipeline.
+function lipLandmarks(opening = 0.04) {
+  const points = Array.from({ length: 478 }, () => ({ x: 0, y: 0, z: 0 }));
+  const coords = {
+    61: [0, 0], 291: [1, 0],
+    81: [0.25, -opening / 2], 311: [0.75, -opening / 2],
+    178: [0.25, opening / 2], 402: [0.75, opening / 2],
+  };
+  for (const [i, [x, y]] of Object.entries(coords)) points[i] = { x, y, z: 0 };
+  return points;
+}
+
+test('closed lip geometry yields low MAR, not diagonal distance masquerading as openness', () => {
+  const closed = mouthAspect(lipLandmarks(0.04));
+  assert.ok(closed < 0.10);
+  assert.ok(Math.abs(closed - 0.04) < 1e-5);
+  assert.ok(mouthAspect(lipLandmarks(0.8)) > 0.79);
+});
+test('asymmetric vertical lip pairs use the correct side without cross-mouth distances', () => {
+  const p = lipLandmarks(0.1);
+  p[81].y = -0.02; p[178].y = 0.04;
+  p[311].y = -0.20; p[402].y = 0.30;
+  assert.ok(Math.abs(mouthAspect(p) - 0.28) < 1e-5);
+});
+test('landmarks to action log: neutral mouth then wide opening with 38% jaw counts after closure', () => {
+  const tracker = new FaceActionTracker();
+  let result;
+  for (let now = 0; now <= 4500; now += 100) {
+    const opening = now < 800 ? 0.04 : now <= 3000 ? 0.8 : now <= 3300 ? 0.44 : 0.04;
+    const jaw = now < 800 || now > 3300 ? 0.1 : 0.38;
+    result = tracker.push({
+      mar: mouthAspect(lipLandmarks(opening)), blends: { jawOpen: jaw },
+      closed: false, blinked: false, pitch: 0, yaw: 0, now,
+    });
+    if (now === 2500) {
+      assert.equal(result.yawn.active, true);
+      assert.equal(result.counts.yawn, 0);
+    }
+  }
+  assert.equal(result.counts.yawn, 1);
+  assert.equal(result.yawn.recentCount, 1);
+  assert.equal(result.events[0].label, 'Yawn candidate');
+});
+test('brief geometry-derived speaking openings still do not count', () => {
+  const tracker = new FaceActionTracker();
+  let result;
+  for (let now = 0; now <= 8000; now += 100) {
+    const open = now >= 1000 && now % 700 < 250;
+    result = tracker.push({
+      mar: mouthAspect(lipLandmarks(open ? 0.65 : 0.04)), blends: { jawOpen: open ? 0.38 : 0.1 },
+      closed: false, blinked: false, pitch: 0, yaw: 0, now,
+    });
+  }
+  assert.equal(result.counts.yawn, 0);
+});
+test('UI explains why a wide mouth is not armed instead of silently showing Monitoring', () => {
+  const d = new YawnDetector();
+  const result = d.push(1.11, 0.38, 1000);
+  assert.equal(result.status, 'needs-neutral');
+  assert.equal(yawnStatusLabel({ present: true, yawnStatus: result.status }, false), 'Close mouth briefly to start');
+  samples(d, 1100, 1800, 0.04);
+  assert.equal(d.push(1.11, 0.38, 1900).status, 'checking');
+});

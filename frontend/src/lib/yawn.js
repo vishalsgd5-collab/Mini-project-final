@@ -8,6 +8,9 @@ export function yawnStatusLabel(live, speaking) {
   if (live.yawnStatus === "closing") return "Closing · confirming…";
   if (live.yawnActive) return "Candidate · close mouth";
   if (live.yawnStatus === "counted") return "Candidate counted";
+  if (live.yawnStatus === "needs-neutral") return "Close mouth briefly to start";
+  if (live.yawnStatus === "cooldown") return "Wait · 6s between candidates";
+  if (live.yawnStatus === "rejected") return "Opening too long · close mouth";
   if (live.yawnStatus === "settling") return "Relax mouth briefly";
   if (live.yawnPending) return `Opening ${((live.mouthOpenMs || 0) / 1000).toFixed(1)}s / 1.5s`;
   return "Monitoring";
@@ -106,7 +109,7 @@ export class YawnDetector {
       this.peakMar = mar;
       this.armed = false;
     }
-    if (this.startedAt === null) return result('monitoring');
+    if (this.startedAt === null) return result(!this.armed ? 'needs-neutral' : now - this.lastCountAt < 6000 ? 'cooldown' : 'monitoring');
     // A mouth held open indefinitely is not treated as repeated yawning.
     if (now - this.startedAt > 8000) {
       this.startedAt = null;

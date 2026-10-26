@@ -4,6 +4,14 @@
 
 The previous detector counted a one-second mouth opening when MAR **or** jawOpen crossed 0.55. Speech and deliberate mouth opening could trigger it. The updated detector uses a complete visual cycle, agreeing signals, temporal stability, and speech-like movement rejection. It does not authenticate genuine physiological yawns.
 
+## Mouth geometry correction
+
+The six-point MAR helper pairs p2/p6 and p3/p5. The correct mouth index order is `[61, 81, 311, 291, 402, 178]`: vertical pairs are **81↔178** and **311↔402**. The previous order swapped the lower lip points, measuring diagonals across the mouth. A simulated nearly closed mouth consequently measured about 0.50 instead of 0.04, preventing the below-0.40 neutral/release gate from arming. This explains why a large open-mouth MAR could still display Monitoring.
+
+Both browser geometry and Python tooling now use the corrected order. Regression tests exercise actual landmark positions through geometry, the action tracker, event log and model count, including a jaw score of 0.38. They do not establish that a real camera yawn has been detected. Existing synthetic training artifacts are not retrained by this geometric correction.
+
+The status now explicitly says **Close mouth briefly to start** if the detector is waiting for neutral lips, and explains cooldown/overlong openings rather than silently showing Monitoring.
+
 ## Current rules
 
 1. Observe a neutral mouth for at least **400 ms** before arming. Starting with an open mouth does not count.
@@ -44,4 +52,4 @@ A deliberately acted yawn with identical face motion can still pass these checks
 
 ## Automated checks
 
-`node --test frontend/tests/*.test.mjs` covers baseline arming, duration, signal agreement, rapid articulation, above-threshold instability, long holds, speaking suppression, missing frames, cooldown, rolling history, accepted-only MAR scoring, action consistency, geometry, gradual mouth closure, moderate supported signals, natural opening ramps, switching Speaking mode OFF without a camera restart, UI status labels, and the unavoidable acted-yawn limitation. These tests use synthetic input sequences; they are not real-camera accuracy measurements.
+`node --test frontend/tests/*.test.mjs` covers baseline arming, duration, signal agreement, rapid articulation, above-threshold instability, long holds, speaking suppression, missing frames, cooldown, rolling history, accepted-only MAR scoring, action consistency, geometry, gradual mouth closure, moderate supported signals, natural opening ramps, switching Speaking mode OFF without a camera restart, neutral/open landmark integration, cross-language index alignment, UI status labels, and the unavoidable acted-yawn limitation. These tests use synthetic input sequences; they are not real-camera accuracy measurements.
