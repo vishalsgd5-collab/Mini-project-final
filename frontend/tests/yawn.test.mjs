@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { YawnDetector } from '../src/lib/yawn.js';
+import { YawnDetector, yawnStatusLabel } from '../src/lib/yawn.js';
 import { FaceActionTracker } from '../src/lib/faceActions.js';
 import { YawnTracker, mouthAspect } from '../src/lib/vision.js';
 
@@ -39,14 +39,14 @@ test('requires MAR and jaw agreement when both signals are available', () => {
   assert.equal(marOnly.count, 0);
   assert.equal(jawOnly.count, 0);
 });
-test('stable opening needs two seconds and counts only after 400ms closure', () => {
+test('stable opening needs 1.5 seconds and counts only after 400ms closure', () => {
   const d = new YawnDetector();
   samples(d, 0, 700, 0.1);
-  assert.equal(samples(d, 800, 2700, 0.8, 0.8).active, false);
-  assert.equal(d.push(0.8, 0.8, 2800).active, true);
+  assert.equal(samples(d, 800, 2200, 0.8, 0.8).active, false);
+  assert.equal(d.push(0.8, 0.8, 2300).active, true);
   assert.equal(d.count, 0);
-  assert.equal(samples(d, 2900, 3200, 0.1).count, 0);
-  assert.equal(d.push(0.1, 0.1, 3300).detected, true);
+  assert.equal(samples(d, 2400, 2700, 0.1).count, 0);
+  assert.equal(d.push(0.1, 0.1, 2800).detected, true);
   assert.equal(d.count, 1);
 });
 test('rapid threshold crossings are labelled speech-like, not yawns', () => {
@@ -55,7 +55,7 @@ test('rapid threshold crossings are labelled speech-like, not yawns', () => {
   let flagged = false;
   for (let t = 800; t <= 4000; t += 100) {
     const open = Math.floor(t / 200) % 2 === 0;
-    const result = d.push(open ? 0.8 : 0.45, open ? 0.8 : 0.4, t);
+    const result = d.push(open ? 0.8 : 0.4, open ? 0.8 : 0.3, t);
     flagged ||= result.status === 'speech-like';
   }
   assert.equal(flagged, true);
@@ -148,4 +148,63 @@ test('a visually identical acted full cycle cannot be authenticated as fake', ()
   const d = new YawnDetector();
   cycle(d);
   assert.equal(d.count, 1); // Document the unavoidable visual-only limitation, not a genuine-yawn guarantee.
+});
+
+
+test('qualified candidate survives natural gradual closure and preserves its peak', () => {
+  const d = new YawnDetector();
+  samples(d, 0, 700, 0.1);
+  samples(d, 800, 2800, 0.8, 0.8);
+  d.push(0.65, 0.55, 2900);
+  d.push(0.55, 0.48, 3000);
+  assert.equal(d.push(0.44, 0.38, 3100).active, true);
+  assert.equal(samples(d, 3200, 3500, 0.1).count, 0);
+  const result = d.push(0.1, 0.1, 3600);
+  assert.equal(result.detected, true);
+  assert.equal(result.count, 1);
+  assert.equal(result.scoringMar, 0.8);
+});
+test('moderate agreeing mouth/jaw signals can complete a cycle', () => {
+  const d = new YawnDetector();
+  samples(d, 0, 700, 0.1);
+  samples(d, 800, 2800, 0.50, 0.40);
+  samples(d, 2900, 3500, 0.1);
+  assert.equal(d.count, 1);
+});
+test('strong jaw opening needs supporting geometry but not an extreme MAR', () => {
+  const d = new YawnDetector();
+  samples(d, 0, 700, 0.1);
+  samples(d, 800, 2800, 0.35, 0.75);
+  samples(d, 2900, 3500, 0.1);
+  assert.equal(d.count, 1);
+});
+test('slow natural ramp, hold and closing phase can qualify', () => {
+  const d = new YawnDetector();
+  samples(d, 0, 700, 0.1);
+  for (let t = 800; t <= 2200; t += 100) {
+    const rise = (t - 800) / 1400;
+    d.push(0.46 + rise * 0.24, 0.36 + rise * 0.24, t);
+  }
+  samples(d, 2300, 3000, 0.7, 0.6);
+  d.push(0.43, 0.36, 3100);
+  samples(d, 3200, 3800, 0.1);
+  assert.equal(d.count, 1);
+});
+test('switching speaking OFF rearms after neutral frames, without restarting camera', () => {
+  const tracker = new FaceActionTracker();
+  for (let now = 0; now <= 3000; now += 100) {
+    tracker.push({ mar: 0.7, blends: { jawOpen: 0.7 }, speaking: true, closed: false, pitch: 0, yaw: 0, now });
+  }
+  let result;
+  for (let now = 3100; now <= 6900; now += 100) {
+    const open = now >= 3900 && now <= 6000;
+    result = tracker.push({ mar: open ? 0.5 : 0.1, blends: { jawOpen: open ? 0.4 : 0.1 }, speaking: false, closed: false, pitch: 0, yaw: 0, now });
+  }
+  assert.equal(result.counts.yawn, 1);
+});
+test('UI explicitly distinguishes paused detection, rearming, hold progress and closure', () => {
+  assert.equal(yawnStatusLabel({ present: true }, true), 'Yawn detection paused');
+  assert.equal(yawnStatusLabel({ present: true, yawnStatus: 'settling' }, false), 'Relax mouth briefly');
+  assert.equal(yawnStatusLabel({ present: true, yawnPending: true, mouthOpenMs: 900 }, false), 'Opening 0.9s / 1.5s');
+  assert.equal(yawnStatusLabel({ present: true, yawnActive: true, yawnStatus: 'closing' }, false), 'Closing · confirming…');
 });

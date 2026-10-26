@@ -1,3 +1,4 @@
+import { yawnStatusLabel } from "../lib/yawn";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -459,7 +460,7 @@ export default function Monitor() {
             title="Suppress new yawn candidates while presenting or talking. Other monitoring stays on."
             onClick={() => setSpeakingMode(on => !on)}
           >
-            Speaking mode {speakingMode ? "on" : "off"}
+            {speakingMode ? "Speaking ON · yawns paused" : "Speaking OFF · yawns enabled"}
           </button>
           <button
             className="btn btn-gold"
@@ -624,7 +625,7 @@ export default function Monitor() {
             <div className="metric"><small>Mouth opening (MAR)</small><b>{live?.present ? (live.mar || 0).toFixed(2) : "—"}</b></div>
             <div className="metric"><small>Jaw open (AI)</small><b>{live?.present ? `${Math.round((live.jawOpen || 0) * 100)}%` : "—"}</b></div>
             <div className="metric"><small>Yawn candidates (session)</small><b>{live?.actionCounts?.yawn ?? 0}</b></div>
-            <div className="metric" role="status"><small>Yawn status</small><b>{!live?.present ? "No face" : speakingMode ? "Speaking mode" : live.yawnStatus === "speech-like" ? "Speech-like movement" : live.yawnActive ? "Candidate · close mouth" : live.yawnStatus === "counted" ? "Candidate counted" : live.yawnPending ? "Checking pattern…" : "Monitoring"}</b></div>
+            <div className="metric" role="status"><small>Yawn status</small><b>{yawnStatusLabel(live, speakingMode)}</b></div>
             <div className="metric"><small>Your open EAR</small><b>{(live?.openBaseline || 0).toFixed(2)}</b></div>
             <div className="metric"><small>Head pitch</small><b>{(live?.pitch || 0).toFixed(0)}°</b></div>
             <div className="metric"><small>Slouch</small><b>{(((live?.slouch || 0) * 100).toFixed(0))}%</b></div>
@@ -637,7 +638,7 @@ export default function Monitor() {
           </div>
           <div className="card" style={{ padding: 12 }}>
             <div className="cat">Face actions (live)</div>
-            <p className="muted" style={{ marginTop: 6 }}>Yawn candidates require a neutral mouth first, agreeing mouth/jaw signals, a stable opening for at least 2 seconds, then closure. Rapid speech-like movements are filtered. Use Speaking mode during conversations to suppress new yawn counts. Amber outline means a pending visual candidate, not a proven yawn; an acted yawn can still look identical.</p>
+            <p className="muted" style={{ marginTop: 6 }}>To test: keep Speaking OFF, relax your mouth briefly, then yawn/open wide for about 1.5–3 seconds and close your mouth. The count updates after closure. Speaking ON deliberately pauses new yawn detection; eye/head monitoring continues. Speech-like movements are filtered, but an acted yawn can still look identical.</p>
             {(live?.actions || []).length === 0 && (
               <p className="muted" style={{ marginTop: 6 }}>Blink, yawn, look away, nod — every gesture is logged here.</p>
             )}
