@@ -1,5 +1,6 @@
 const KEY = "aura_sound_on";
 const VOL_KEY = "aura_sound_vol";
+const DEFAULT_VOLUME = 1.0;
 let ctx = null;
 let unlocked = false;
 const cache = {};
@@ -11,8 +12,10 @@ export function setSoundOn(on) {
   localStorage.setItem(KEY, on ? "1" : "0");
 }
 export function getVolume() {
-  const v = Number(localStorage.getItem(VOL_KEY));
-  return Number.isFinite(v) ? Math.min(1, Math.max(0.15, v)) : 0.75;
+  const raw = localStorage.getItem(VOL_KEY);
+  // Number(null) is zero: previously a missing preference forced just 15% volume.
+  const v = raw === null || raw.trim() === "" ? DEFAULT_VOLUME : Number(raw);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0.15, v)) : DEFAULT_VOLUME;
 }
 export function setVolume(v) {
   localStorage.setItem(VOL_KEY, String(v));
@@ -78,7 +81,7 @@ function playOsc(freq, startOff, dur) {
   const g = c.createGain();
   o.type = "triangle";
   o.frequency.value = freq;
-  const vol = getVolume() * 0.45;
+  const vol = getVolume() * 0.60;
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.02);
   g.gain.linearRampToValueAtTime(0.0001, t + dur);
