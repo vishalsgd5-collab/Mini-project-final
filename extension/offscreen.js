@@ -20,7 +20,7 @@ function beep(kind) {
     o.type = "sine";
     o.frequency.value = f;
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.40, now + 0.02 + i * 0.18);
+    g.gain.exponentialRampToValueAtTime(0.65, now + 0.02 + i * 0.18);
     g.gain.exponentialRampToValueAtTime(0.0001, now + 0.28 + i * 0.2);
     o.connect(g);
     g.connect(ac.destination);

@@ -102,7 +102,7 @@
       o.type = "sine";
       o.frequency.value = f;
       g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.35, now + 0.02 + i * 0.16);
+      g.gain.exponentialRampToValueAtTime(0.55, now + 0.02 + i * 0.16);
       g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26 + i * 0.18);
       o.connect(g);
       g.connect(ctx.destination);

@@ -39,7 +39,7 @@ function wavUrl(freq, dur) {
   const samples = new Int16Array(n);
   for (let i = 0; i < n; i++) {
     const env = Math.min(i / (0.015 * sr), 1, (n - i) / (0.05 * sr));
-    samples[i] = Math.round(Math.sin((2 * Math.PI * freq * i) / sr) * env * 0.9 * 32767);
+    samples[i] = Math.round(Math.sin((2 * Math.PI * freq * i) / sr) * env * 0.98 * 32767);
   }
   const bytes = 44 + n * 2;
   const buf = new ArrayBuffer(bytes);
@@ -81,7 +81,7 @@ function playOsc(freq, startOff, dur) {
   const g = c.createGain();
   o.type = "triangle";
   o.frequency.value = freq;
-  const vol = getVolume() * 0.60;
+  const vol = getVolume() * 0.80;
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.02);
   g.gain.linearRampToValueAtTime(0.0001, t + dur);

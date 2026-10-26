@@ -48,7 +48,7 @@ test('fatigue beep uses full WAV volume and boosted Web Audio gain', () => {
   const alerts = sounds.slice(before).filter(sound => sound.volume !== 0.01);
   assert.equal(alerts.length, 3);
   assert.ok(alerts.every(sound => sound.volume === 1));
-  assert.ok(peaks.slice(-3).every(value => value === 0.6));
+  assert.ok(peaks.slice(-3).every(value => value === 0.8));
 });
 test('F8-style fatigue mute still suppresses beep; away alarm remains audible', () => {
   setSoundOn(false);
@@ -61,6 +61,6 @@ test('F8-style fatigue mute still suppresses beep; away alarm remains audible', 
 test('Guardian uses louder bounded gain targets in both audio paths', () => {
   const offscreen = readFileSync(new URL('../../extension/offscreen.js', import.meta.url), 'utf8');
   const content = readFileSync(new URL('../../extension/content.js', import.meta.url), 'utf8');
-  assert.match(offscreen, /exponentialRampToValueAtTime\(0\.40,/);
-  assert.match(content, /exponentialRampToValueAtTime\(0\.35,/);
+  assert.match(offscreen, /exponentialRampToValueAtTime\(0\.65,/);
+  assert.match(content, /exponentialRampToValueAtTime\(0\.55,/);
 });
