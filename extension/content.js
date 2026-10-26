@@ -1,8 +1,6 @@
 (function () {
   const keyTimes = [];
   let hud = null;
-  let loopId = 0;
-  let audioCtx = null;
 
   window.addEventListener(
     "keydown",
@@ -27,6 +25,7 @@
     const data = event.data;
     if (!data || !data.type) return;
     if (
+      data.type === "AURA_AUDIO_SETTINGS" ||
       data.type === "AURA_SCHEDULE_SYNC" ||
       data.type === "AURA_RITUAL" ||
       data.type === "AURA_LIVE" ||
@@ -56,8 +55,7 @@
     if (msg?.type === "AURA_TYPING") {
       window.postMessage({ type: "AURA_TYPING", rpm: msg.rpm, wpm: msg.wpm }, "*");
     }
-    if (msg?.type === "AURA_BEEP") playBeep(msg.kind, msg.loop);
-    if (msg?.type === "AURA_STOP_BEEP") stopLoop();
+    // Sound is played once by the offscreen document, not once per open tab.
   });
 
   function ensureHud() {
@@ -81,47 +79,6 @@
     el.classList.toggle("hot", score >= 50);
     el.classList.toggle("away", !present);
     el.innerHTML = `<span class="aura-dot"></span><strong>AURA</strong><em>${line}</em>`;
-  }
-
-  function ac() {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    if (!audioCtx) audioCtx = new AC();
-    if (audioCtx.state === "suspended") audioCtx.resume();
-    return audioCtx;
-  }
-
-  function tone(kind) {
-    const ctx = ac();
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const freqs = kind === "away" ? [880, 698] : kind === "docket" ? [523, 659] : [784, 988];
-    freqs.forEach((f, i) => {
-      const o = ctx.createOscillator();
-      const g = ctx.createGain();
-      o.type = "sine";
-      o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, now);
-      g.gain.exponentialRampToValueAtTime(0.55, now + 0.02 + i * 0.16);
-      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.26 + i * 0.18);
-      o.connect(g);
-      g.connect(ctx.destination);
-      o.start(now + i * 0.16);
-      o.stop(now + 0.3 + i * 0.18);
-    });
-  }
-
-  function playBeep(kind, loop) {
-    tone(kind);
-    if (loop) {
-      stopLoop();
-      loopId = window.setInterval(() => tone(kind || "away"), 1400);
-    }
-  }
-
-  function stopLoop() {
-    if (loopId) window.clearInterval(loopId);
-    loopId = 0;
   }
 
   function showOverlay(item) {

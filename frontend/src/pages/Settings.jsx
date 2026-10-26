@@ -1,3 +1,4 @@
+import SoundPicker from "../components/SoundPicker";
 import { useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
@@ -44,12 +45,12 @@ export default function Settings() {
         <p>
           A website cannot run your webcam after Chrome is closed, and it cannot draw on
           other sites by itself. Install the unpacked Chrome extension in this repo’s
-          <b> extension</b> folder, then leave Live iris open.
+          <b> extension</b> folder, then leave Aura Monitor open.
         </p>
         <ol className="steps">
           <li>Chrome → chrome://extensions → Developer mode ON</li>
           <li>Load unpacked → choose the <code>extension</code> folder</li>
-          <li>Click Enable desktop alerts below, and Allow the camera on Live iris</li>
+          <li>Click Enable desktop alerts below, and Allow the camera on Aura Monitor</li>
           <li>Keep that tab open (minimized is fine). Rituals then appear on YouTube, Gmail, docs — and as a Windows toast over Word or Zoom</li>
         </ol>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
@@ -81,6 +82,8 @@ export default function Settings() {
           </button>
         </div>
       </div>
+
+      <SoundPicker />
 
       <form className="settings" onSubmit={save}>
         <label className="field">

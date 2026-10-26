@@ -1,3 +1,4 @@
+import SoundPicker from "../components/SoundPicker";
 import { yawnStatusLabel } from "../lib/yawn";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
@@ -506,6 +507,8 @@ export default function Monitor() {
           </button>
         </div>
       </div>
+
+      <SoundPicker compact />
 
       {alertState !== "granted" && (
         <div className="card" style={{ marginBottom: 14, borderColor: "var(--gold)" }}>

@@ -1,44 +1,38 @@
+/* The only Guardian audio renderer: one sound regardless of open-tab count. */
 let ctx = null;
 let loopId = 0;
+let settings = AuraSoundCatalog.sanitizePreferences();
+const playing = new Set();
+let generation = 0;
 
-function audio() {
+async function beep(kind) {
+  if (!settings.enabled && kind !== "away") return;
+  const token = generation;
   const AC = self.AudioContext || self.webkitAudioContext;
-  if (!AC) return null;
+  if (!AC) return;
   if (!ctx) ctx = new AC();
-  return ctx;
+  if (ctx.state === "suspended") await ctx.resume();
+  if (token !== generation) return;
+  const stop = AuraSoundCatalog.play(ctx, settings.soundId, settings.volume, kind);
+  playing.add(stop);
+  setTimeout(() => playing.delete(stop), 2000);
 }
-
-function beep(kind) {
-  const ac = audio();
-  if (!ac) return;
-  if (ac.state === "suspended") ac.resume();
-  const now = ac.currentTime;
-  const freqs = kind === "away" ? [880, 698] : kind === "docket" ? [523, 659] : [784, 988];
-  freqs.forEach((f, i) => {
-    const o = ac.createOscillator();
-    const g = ac.createGain();
-    o.type = "sine";
-    o.frequency.value = f;
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.65, now + 0.02 + i * 0.18);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.28 + i * 0.2);
-    o.connect(g);
-    g.connect(ac.destination);
-    o.start(now + i * 0.18);
-    o.stop(now + 0.32 + i * 0.2);
-  });
+function stopAudio() {
+  generation++;
+  if (loopId) clearInterval(loopId);
+  loopId = 0;
+  for (const stop of playing) stop();
+  playing.clear();
 }
-
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === "AURA_BEEP") {
-    beep(msg.kind || "fatigue");
-    if (msg.loop) {
-      if (loopId) clearInterval(loopId);
-      loopId = setInterval(() => beep(msg.kind || "away"), 1400);
-    }
+chrome.runtime.onMessage.addListener(msg => {
+  if (msg?.type === "AURA_AUDIO_UPDATE") {
+    settings = AuraSoundCatalog.sanitizePreferences(msg.settings);
   }
-  if (msg?.type === "AURA_STOP_BEEP") {
-    if (loopId) clearInterval(loopId);
-    loopId = 0;
+  if (msg?.type === "AURA_AUDIO_PLAY") {
+    settings = AuraSoundCatalog.sanitizePreferences(msg.settings);
+    if (msg.loop) stopAudio();
+    beep(msg.kind || "fatigue").catch(console.error);
+    if (msg.loop) loopId = setInterval(() => beep(msg.kind || "away").catch(console.error), 1400);
   }
+  if (msg?.type === "AURA_AUDIO_STOP") stopAudio();
 });

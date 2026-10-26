@@ -1,3 +1,5 @@
+import "../../../extension/sound-catalog.js";
+
 /** Talk to the AURA Guardian extension (every website) and any same-origin tabs. */
 
 export function tellGuardian(payload) {
@@ -19,7 +21,7 @@ export function tellLive(metrics) {
 }
 
 export function tellBeep(kind = "fatigue", loop = false) {
-  tellGuardian({ type: "AURA_BEEP", kind, loop });
+  tellGuardian({ type: "AURA_BEEP", kind, loop, settings: globalThis.AuraSoundCatalog.readPreferences(localStorage) });
 }
 
 export function tellStopBeep() {

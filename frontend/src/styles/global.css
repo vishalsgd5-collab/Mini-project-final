@@ -559,3 +559,16 @@ svg.icon { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-w
   .rail nav { flex-direction: row; margin: 0 auto; }
   .main { padding: 18px 16px 88px; }
 }
+
+/* Saved alert-sound library, shared by the monitor and settings. */
+.sound-picker { margin-bottom: 18px; }
+.sound-picker > summary { cursor: pointer; color: var(--gold, #d8b877); font-weight: 600; padding: 4px 0; }
+.sound-picker-body { margin-top: 16px; }
+.sound-picker-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 16px 0; }
+.sound-picker input[type="range"] { width: 100%; accent-color: #d8b877; min-height: 36px; }
+.sound-choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.sound-choice { padding: 16px; border: 1px solid #334739; border-radius: 14px; }
+.sound-choice.selected { border-color: #d8b877; background: rgba(216, 184, 119, 0.07); }
+.sound-choice p { margin: 6px 0 12px; font-size: 13px; }
+.sound-choice-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 650px) { .sound-choice-grid, .sound-picker-controls { grid-template-columns: 1fr; } }

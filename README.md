@@ -110,3 +110,9 @@ The generating process for the training set is **not** a black box: blink suppre
 The bandit is a true contextual LinUCB (ridge regression per arm, UCB bonus √(xᵀA⁻¹x)). A heuristic prior is mixed in until each arm has a few trials, so the first hour is not random.
 
 See `docs/TECHNICAL.md` for landmark indices, feature definitions and the reward function.
+
+## Choose your alert sound
+
+AURA now includes **eight selectable beep sounds** with **Preview**, **Use sound**, **Stop preview**, and a saved **15–100% volume slider**. Open **Studio settings → Beep sound**, or expand the sound section in the Aura Monitor. Your choice saves automatically in this browser and is used for fatigue alerts, ritual chimes and scheduled reminders. F8 mute and the separate manually stopped away alarm are preserved.
+
+For cross-website/background reminders, update **AURA Guardian to 1.4.0**, reload it in `chrome://extensions`, refresh your tabs, and choose a sound in AURA. See [sound settings and Guardian instructions](documentation/ALERT_SOUNDS.md). The [standalone eight-sound listening page](docs/beep-options.html) lets you compare/download tones; save your preference inside the complete app.

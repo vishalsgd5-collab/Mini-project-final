@@ -1,3 +1,5 @@
+importScripts("sound-catalog.js");
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.alarms.create("aura-keep", { periodInMinutes: 1 });
 });
@@ -24,6 +26,26 @@ async function ensureOffscreen() {
   }
 }
 
+let audioQueue = Promise.resolve();
+function enqueueAudio(work) {
+  const result = audioQueue.then(work);
+  audioQueue = result.catch(console.error);
+  return result;
+}
+async function saveAudioSettings(settings) {
+  const safe = AuraSoundCatalog.sanitizePreferences(settings);
+  await chrome.storage.local.set({ auraAudioSettings: safe });
+  return safe;
+}
+async function playGuardianAudio(kind, loop = false, settings) {
+  const stored = await chrome.storage.local.get("auraAudioSettings");
+  const safe = settings ? await saveAudioSettings(settings) : AuraSoundCatalog.sanitizePreferences(stored.auraAudioSettings);
+  // Muting does not cancel Windows notifications or the independent away alarm.
+  if (!safe.enabled && kind !== "away") return;
+  await ensureOffscreen();
+  chrome.runtime.sendMessage({ type: "AURA_AUDIO_PLAY", kind, loop, settings: safe }, () => { void chrome.runtime.lastError; });
+}
+
 function broadcast(msg) {
   chrome.tabs.query({}, (tabs) => {
     for (const tab of tabs) {
@@ -37,6 +59,17 @@ function broadcast(msg) {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return false;
+
+  if (msg.type === "AURA_AUDIO_SETTINGS") {
+    if (!trustedScheduleSender(_sender.url)) { sendResponse({ ok: false }); return false; }
+    enqueueAudio(async () => {
+      const settings = await saveAudioSettings(msg.settings);
+      // Update a running away loop's volume without changing or stopping its tone.
+      chrome.runtime.sendMessage({ type: "AURA_AUDIO_UPDATE", settings }, () => { void chrome.runtime.lastError; });
+      sendResponse({ ok: true });
+    }).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
 
   if (msg.type === "AURA_SCHEDULE_SYNC") {
     if (!trustedScheduleSender(_sender.url)) { sendResponse({ ok: false }); return false; }
@@ -79,12 +112,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "AURA_BEEP") {
-    ensureOffscreen().then(() => {
-      chrome.runtime.sendMessage(msg, () => {
-        void chrome.runtime.lastError;
-      });
-    });
-    broadcast(msg);
+    if (!trustedScheduleSender(_sender.url)) { sendResponse({ ok: false }); return false; }
+    enqueueAudio(() => playGuardianAudio(msg.kind || "fatigue", !!msg.loop, msg.settings));
     const title =
       msg.kind === "away"
         ? "AURA · away from camera"
@@ -104,10 +133,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   }
 
   if (msg.type === "AURA_STOP_BEEP") {
-    chrome.runtime.sendMessage(msg, () => {
-      void chrome.runtime.lastError;
+    enqueueAudio(async () => {
+      chrome.runtime.sendMessage({ type: "AURA_AUDIO_STOP" }, () => { void chrome.runtime.lastError; });
     });
-    broadcast(msg);
     sendResponse({ ok: true });
     return true;
   }
@@ -168,8 +196,7 @@ async function deliverSchedule(id) {
   await chrome.storage.local.set({ emberItems });
   broadcast({ type: "AURA_SCHEDULE_ACK", items: emberItems });
   broadcast({ type: "AURA_SCHEDULE_DUE", item });
-  await ensureOffscreen();
-  chrome.runtime.sendMessage({ type: "AURA_BEEP", kind: "docket", loop: false }, () => { void chrome.runtime.lastError; });
+  await enqueueAudio(() => playGuardianAudio("docket"));
 }
 chrome.runtime.onStartup.addListener(() => enqueueSchedule(restoreSchedule));
 chrome.runtime.onInstalled.addListener(() => enqueueSchedule(restoreSchedule));
