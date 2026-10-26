@@ -1,3 +1,4 @@
+import { faceUsable, trackingFresh } from "../lib/faceEngine.js";
 import PersonalPaceCard from "../components/PersonalPaceCard";
 import { activityPayload } from "../lib/activity.js";
 import SoundPicker from "../components/SoundPicker";
@@ -209,7 +210,7 @@ export default function Monitor() {
   useEffect(() => {
     const id = setInterval(() => {
       const score = predRef.current?.fatigue_score ?? 0;
-      const watching = statusRef.current === "live" || statusRef.current === "lab";
+      const watching = faceUsable(liveRef.current) || statusRef.current === "lab";
       if (runningRef.current && watching && score >= 75) {
         if (!fatigueSince.current) fatigueSince.current = performance.now();
         const held = (performance.now() - fatigueSince.current) / 1000;
@@ -239,7 +240,7 @@ export default function Monitor() {
         if (!alarmOnRef.current) document.title = "AURA — Fatigue Detection";
       }
 
-      const liveCam = statusRef.current === "live";
+      const liveCam = statusRef.current === "live" && trackingFresh(liveRef.current);
       const present = !!liveRef.current?.present;
       if (liveCam && runningRef.current && !present) {
         if (!absentSince.current) absentSince.current = performance.now();
@@ -260,7 +261,7 @@ export default function Monitor() {
           if (beepLoop.current) window.clearInterval(beepLoop.current);
           beepLoop.current = window.setInterval(() => playAlarmBeep(), 1400);
         }
-      } else if (present && !alarmOnRef.current) {
+      } else if (!alarmOnRef.current) {
         absentSince.current = null;
         setAwaySec(0);
       }
@@ -284,6 +285,10 @@ export default function Monitor() {
     if (!running || !sessionId) return undefined;
     const tick = async () => {
       const snapshot = liveRef.current;
+      if (statusRef.current !== "lab" && !faceUsable(snapshot)) {
+        setPred(null);
+        return;
+      }
       if (busy.current || ritualRef.current || !snapshot) return;
       busy.current = true;
       const sessionMin = (performance.now() - startedAt.current) / 60000;
@@ -315,6 +320,7 @@ export default function Monitor() {
           from_camera: statusRef.current === "live",
         };
         const out = await api("/api/fatigue/predict", { method: "POST", body });
+        if (statusRef.current !== "lab" && !faceUsable(liveRef.current)) return;
         setPred(out);
         if (out.intervention && !offerRef.current && !ritualRef.current && performance.now() - lastBreak.current > 20000) {
           setOffer(out.intervention);
@@ -342,35 +348,11 @@ export default function Monitor() {
     return () => clearInterval(id);
   }, [running, sessionId, user]);
 
-  async function turnOnCamera() {
+  function turnOnCamera() {
     unlockAudio();
     setRunning(true);
-    setHint("Allow the camera if Chrome asks.");
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      const video = videoRef.current;
-      if (video) {
-        if (video.srcObject && video.srcObject !== stream) {
-          video.srcObject.getTracks?.().forEach((t) => t.stop());
-        }
-        video.srcObject = stream;
-        video.muted = true;
-        video.playsInline = true;
-        video.setAttribute("playsinline", "");
-        await video.play().catch(() => {});
-      }
-      setHint("Camera on. Sit in the frame.");
-    } catch (err) {
-      const name = err?.name || "";
-      if (name === "NotAllowedError") {
-        setHint("Blocked. Click the lock icon in the address bar → Camera → Allow, then press Turn camera on again.");
-      } else if (name === "NotReadableError") {
-        setHint("Camera in use. Close Zoom / Teams / other AURA tabs, then press Turn camera on.");
-      } else {
-        setHint(err?.message || "Could not open the camera.");
-      }
-    }
-    setRetryToken((n) => n + 1);
+    setHint("Starting camera and face tracker. Allow camera access if Chrome asks.");
+    setRetryToken(n => n + 1);
   }
 
   async function feedback(status, extra = {}) {
@@ -386,9 +368,10 @@ export default function Monitor() {
     setRitual(null);
   }
 
-  const score = pred?.fatigue_score ?? 18;
+  const scoreReady = !!pred && (status === "lab" || faceUsable(live));
+  const score = scoreReady ? pred.fatigue_score : 0;
   const level = pred?.level ?? "alert";
-  const hud = status === "live" ? "live camera" : status === "lab" ? "lab mode" : status === "loading" ? "opening iris" : "idle";
+  const hud = status === "live" ? "tracker running" : status === "lab" ? "lab mode" : status === "loading" ? "opening camera" : status === "tracking-loading" ? "loading face tracker" : status === "tracking-error" ? "tracker error" : status === "tracking-paused" ? "tracker paused" : "idle";
 
   return (
     <>
@@ -559,6 +542,13 @@ export default function Monitor() {
           <p className="muted">If no face is seen for 5 minutes, a constant alarm starts. Only Stop alarm turns it off.</p>
         </div>
       )}
+      {camOn && (
+        <div className="card" role="status" style={{ marginBottom: 14, borderColor: error ? "var(--coral)" : "var(--gold)" }}>
+          <strong>{status === "live" ? (live.present ? "Face tracker active · face detected" : "Face tracker active · searching for a face") : status === "tracking-loading" ? "Camera streaming · loading the face tracker…" : "Camera streaming · face tracker is not running"}</strong>
+          <p className="muted">{error || (status === "live" ? `CPU processing · ${live.fps || 0} FPS · ${live.processedFrames || 0} frames processed. Keep your face centered and evenly lit.` : "The model and WASM files load from this AURA site. Camera video alone does not mean detection is ready. Away timer and fatigue scoring wait for working tracking.")}</p>
+          {status !== "live" && <button type="button" className="btn btn-gold" onClick={turnOnCamera}>Retry face detection</button>}
+        </div>
+      )}
       {hint && (
         <div className="card" style={{ marginBottom: 14 }}>
           <strong>{hint}</strong>
@@ -597,7 +587,7 @@ export default function Monitor() {
             <div className="stage-hud">
               <span className={`pill ${status === "live" ? "live" : status === "lab" ? "lab" : ""}`}>{hud}</span>
               <span className="pill">
-                {live?.present ? "face locked" : "searching"} · EAR {(live?.ear || 0).toFixed(2)}
+                {status !== "live" ? "tracking unavailable" : live?.present ? "face locked" : "searching"} · EAR {live?.present && trackingFresh(live) ? (live.ear || 0).toFixed(2) : "—"}
                 {live?.glassesLikely || glassesMode ? " · glasses-aware" : ""}
                 {live?.calibrating ? " · calibrating open eyes…" : ""}
               </span>
@@ -614,12 +604,12 @@ export default function Monitor() {
 
         <div className="side">
           <div className="card gauge-card">
-            <Gauge value={score} level={level} />
-            <div className="level">{Math.round((pred?.confidence || 0.7) * 100)}% confidence</div>
+            <Gauge value={score} level={level} available={scoreReady} />
+            <div className="level">{scoreReady ? `${Math.round((pred.confidence || 0) * 100)}% confidence` : faceUsable(live) ? "Face detected · waiting for first estimate" : "Waiting for a detected face · no fatigue estimate"}</div>
           </div>
           <div className="metrics">
-            <div className="metric"><small>Blinks / min</small><b>{(live?.blinkRate || 0).toFixed(0)}</b></div>
-            <div className="metric"><small>PERCLOS</small><b>{(((live?.perclos || 0) * 100).toFixed(0))}%</b></div>
+            <div className="metric"><small>Blinks / min</small><b>{live?.present && trackingFresh(live) ? (live.blinkRate || 0).toFixed(0) : "—"}</b></div>
+            <div className="metric"><small>PERCLOS</small><b>{live?.present && trackingFresh(live) ? `${((live.perclos || 0) * 100).toFixed(0)}%` : "—"}</b></div>
             <div className="metric"><small>Lid close (AI)</small><b>{(((live?.blinkScore || 0) * 100).toFixed(0))}%</b></div>
             <div className="metric"><small>Mouth opening (MAR)</small><b>{live?.present ? (live.mar || 0).toFixed(2) : "—"}</b></div>
             <div className="metric"><small>Jaw open (AI)</small><b>{live?.present ? `${Math.round((live.jawOpen || 0) * 100)}%` : "—"}</b></div>

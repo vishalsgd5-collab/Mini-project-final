@@ -122,3 +122,12 @@ For cross-website/background reminders, update **AURA Guardian to 1.5.0**, reloa
 The Monitor now learns your **first 60 active seconds** of typing and mouse movement separately, then freezes those session baselines. A **>15% slowdown sustained for 30 seconds**, with sufficient recent input, contributes **up to 20 points** to the combined fatigue score. Idle reading and unused input channels do not count as personal slowdown. See starting/current pace, calibration progress and the contribution under **Your personal work pace**; use **Restart pace baseline** for a new task.
 
 Typing is no longer double-counted, and mouse speed uses **pixels per moving second**, not mouse-event frequency. Update/reload **Guardian 1.5.0** for numeric input activity from other supported websites while the Monitor stays open. Native Windows-app input is outside browser-extension access. See [measurement, score formula, privacy and limitations](documentation/PERSONAL_WORK_PACE.md).
+
+## Face tracker reliability
+
+The camera stream and face-tracker readiness are now separate. AURA bundles its
+MediaPipe model/WASM assets, uses CPU inference, exposes tracker failures and a
+**Retry face detection** button, and reports processing FPS/frame count. Failed
+or stale tracking does not start the away countdown or produce a fake fatigue
+estimate. See [failure analysis and checks](documentation/FACE_TRACKING.md) and
+[third-party model/runtime attribution](frontend/public/vision/NOTICE.md).

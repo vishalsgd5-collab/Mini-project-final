@@ -1,3 +1,4 @@
+import { loadFaceEngine } from "../lib/faceEngine.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BlinkTracker,
@@ -10,10 +11,6 @@ import {
   slouchFromPose,
 } from "../lib/vision";
 import { FaceActionTracker, blendMap } from "../lib/faceActions";
-
-const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
-const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
 
 function friendlyCamError(err) {
   const name = err?.name || "";
@@ -119,30 +116,6 @@ function blendScore(blends) {
   return ((blends.eyeBlinkLeft || 0) + (blends.eyeBlinkRight || 0)) / 2;
 }
 
-let visionMod = null;
-async function loadLandmarker() {
-  if (!visionMod) visionMod = await import("@mediapipe/tasks-vision");
-  const { FaceLandmarker, FilesetResolver } = visionMod;
-  const fileset = await FilesetResolver.forVisionTasks(WASM_URL);
-  const options = {
-    runningMode: "VIDEO",
-    numFaces: 1,
-    outputFaceBlendshapes: true,
-    outputFacialTransformationMatrixes: true,
-  };
-  try {
-    return await FaceLandmarker.createFromOptions(fileset, {
-      ...options,
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
-    });
-  } catch {
-    return await FaceLandmarker.createFromOptions(fileset, {
-      ...options,
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "CPU" },
-    });
-  }
-}
-
 export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false, speakingMode = false }) {
   const speakingRef = useRef(speakingMode);
   speakingRef.current = speakingMode;
@@ -164,12 +137,14 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
     present: false,
     blinks: 0,
     fps: 0,
+    trackingState: "starting",
+    lastProcessedAt: null,
+    processedFrames: 0,
   });
   const landmarker = useRef(null);
-  const raf = useRef(0);
+  const timer = useRef(0);
   const blinker = useRef(new BlinkTracker());
   const actor = useRef(new FaceActionTracker());
-  const lastTs = useRef(0);
   const frames = useRef(0);
   const fpsAt = useRef(performance.now());
 
@@ -181,7 +156,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
   }, [videoRef]);
 
   const stop = useCallback(() => {
-    cancelAnimationFrame(raf.current);
+    clearTimeout(timer.current);
     stopTracks();
     try {
       landmarker.current?.close?.();
@@ -193,81 +168,101 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
 
   useEffect(() => {
     if (!enabled) {
-      cancelAnimationFrame(raf.current);
-      stopTracks();
+      stop();
       setStatus("idle");
+      setLive(s => ({ ...s, present: false, trackingState: "stopped", lastProcessedAt: null, closedMs: 0 }));
       return undefined;
     }
-    let cancelled = false;
-    const isCancelled = () => cancelled;
-
+    const controller = new AbortController();
+    let cancelled = false, failed = false, recovering = false;
+    let engine = null, ownedStream = null;
+    let recoveries = 0, processed = 0, lastVideoTime = -1, lastSuccess = 0, engineStarted = 0;
+    const clearTracking = trackingState => {
+      const canvas = canvasRef.current;
+      canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+      actor.current.yawnDetector.resetCandidate();
+      actor.current.closedSince = null;
+      actor.current.fired.microsleep = false;
+      setLive(s => ({ ...s, present: false, trackingState, closed: false,
+        lastProcessedAt: null, closedMs: 0, yawnActive: false, yawnPending: false,
+        yawnStatus: "unavailable", scoringMar: .05, mouthOpenMs: 0, jawOpen: 0 }));
+    };
+    function closeEngine() {
+      const old = engine; engine = null;
+      if (landmarker.current === old) landmarker.current = null;
+      try { old?.close(); } catch { /* already closed */ }
+    }
+    async function startEngine() {
+      const next = await loadFaceEngine({ signal: controller.signal, base: import.meta.env.BASE_URL });
+      if (cancelled) { next.close(); return; }
+      engine = next; landmarker.current = next;
+      engineStarted = performance.now(); lastSuccess = 0; lastVideoTime = -1;
+      setError(""); setStatus("tracking-loading");
+    }
     async function boot() {
-      setStatus("loading");
-      setError("");
+      setCamOn(false); setStatus("loading"); setError(""); clearTracking("starting");
       try {
-        const video = await waitForVideoEl(videoRef, isCancelled);
-        if (!video) throw new Error("Video element is not ready. Press Turn camera on.");
+        const video = await waitForVideoEl(videoRef, () => cancelled);
         if (cancelled) return;
-
+        if (!video) throw new Error("Video element is not ready. Click Retry face detection.");
         let stream = video.srcObject;
         if (!liveTracks(stream)) {
           stream = await openCamera();
-          if (cancelled) {
-            stream.getTracks().forEach((t) => t.stop());
-            return;
-          }
-          if (video.srcObject && video.srcObject !== stream) {
-            video.srcObject.getTracks?.().forEach((t) => t.stop());
-          }
+          if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
           video.srcObject = stream;
         }
+        ownedStream = stream;
         await playVideo(video);
         if (cancelled) return;
-        setCamOn(true);
-        setStatus("live");
-
-        if (!landmarker.current) {
-          landmarker.current = await Promise.race([
-            loadLandmarker(),
-            new Promise((_, rej) =>
-              setTimeout(() => rej(new Error("Face engine timed out. Camera is on — press Turn camera on to retry tracking.")), 25000)
-            ),
-          ]);
-        }
+        setCamOn(true); setStatus("tracking-loading");
+        await startEngine();
         if (cancelled) return;
-        blinker.current = new BlinkTracker();
-        actor.current = new FaceActionTracker();
+        blinker.current = new BlinkTracker(); actor.current = new FaceActionTracker();
+        frames.current = 0; fpsAt.current = performance.now();
         loop();
       } catch (err) {
-        console.warn("Camera / MediaPipe unavailable", err);
+        if (cancelled) return;
+        failed = true; closeEngine();
+        console.warn("Camera / face tracking unavailable", err);
         const hasCam = liveTracks(videoRef.current?.srcObject);
-        setCamOn(hasCam);
-        setError(friendlyCamError(err));
-        setStatus(hasCam ? "live" : "idle");
+        setCamOn(hasCam); setError(friendlyCamError(err));
+        setStatus(hasCam ? "tracking-error" : "idle"); clearTracking("error");
       }
     }
-
+    async function recover(err) {
+      if (cancelled || recovering) return;
+      closeEngine(); clearTracking("error");
+      if (recoveries++ >= 1) {
+        failed = true; setStatus("tracking-error");
+        setError(`Face processing stopped: ${err?.message || "unknown error"}. Click Retry face detection.`);
+        return;
+      }
+      recovering = true; setStatus("tracking-loading");
+      setError("Restarting the CPU face tracker after a processing error…");
+      try { await startEngine(); }
+      catch (error) {
+        if (!cancelled) { failed = true; setStatus("tracking-error"); setError(friendlyCamError(error)); }
+      } finally { recovering = false; }
+    }
     function loop() {
-      const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const lm = landmarker.current;
-      if (!video || video.readyState < 2) {
-        raf.current = requestAnimationFrame(loop);
-        return;
-      }
-      if (!lm) {
-        raf.current = requestAnimationFrame(loop);
-        return;
-      }
-      const now = performance.now();
-      if (now - lastTs.current > 28) {
-        lastTs.current = now;
-        const result = lm.detectForVideo(video, now);
+      if (cancelled || failed) return;
+      try {
+        const video = videoRef.current, canvas = canvasRef.current;
+        if (!engine || recovering || !video || video.readyState < 2 || !video.videoWidth || video.currentTime === lastVideoTime) return;
+        const now = performance.now();
+        const result = engine.detectForVideo(video, now);
+        lastVideoTime = video.currentTime; lastSuccess = now; processed++;
+        setStatus("live"); setError("");
+        frames.current++;
+        let fps = 0;
+        if (now - fpsAt.current >= 1000) {
+          fps = Math.round(frames.current * 1000 / (now - fpsAt.current));
+          frames.current = 0; fpsAt.current = now;
+        }
         const face = result.faceLandmarks?.[0];
         const ctx = canvas?.getContext("2d");
-        if (canvas) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
+        if (canvas && (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight)) {
+          canvas.width = video.videoWidth; canvas.height = video.videoHeight;
         }
         if (face) {
           blinker.current.setGlasses(glassesRef.current);
@@ -292,21 +287,17 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             now,
           });
           if (ctx) {
-            drawOverlay(ctx, canvas.width, canvas.height, face, {
+            try { drawOverlay(ctx, canvas.width, canvas.height, face, {
               ...ear,
               leftClosed,
               rightClosed,
               openBaseline: blink.openBaseline,
-            }, pose, { yawning: actions.yawn.active });
-          }
-          frames.current += 1;
-          let fps = 0;
-          if (now - fpsAt.current > 1000) {
-            fps = frames.current;
-            frames.current = 0;
-            fpsAt.current = now;
+            }, pose, { yawning: actions.yawn.active }); } catch (drawError) { console.warn("Face overlay unavailable", drawError); }
           }
           setLive((s) => ({
+            trackingState: "healthy",
+            lastProcessedAt: now,
+            processedFrames: processed,
             ear: ear.avg,
             earLeft: ear.left,
             earRight: ear.right,
@@ -342,18 +333,33 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
           }));
         } else {
           actor.current.yawnDetector.resetCandidate();
+          actor.current.closedSince = null;
+          actor.current.fired.microsleep = false;
           if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-          setLive((s) => ({ ...s, present: false, yawnActive: false, yawnPending: false, yawnStatus: "unavailable", scoringMar: 0.05, mouthOpenMs: 0, jawOpen: 0 }));
+          setLive((s) => ({ ...s, trackingState: "healthy", lastProcessedAt: now, processedFrames: processed, fps: fps || s.fps, closedMs: 0, present: false, yawnActive: false, yawnPending: false, yawnStatus: "unavailable", scoringMar: 0.05, mouthOpenMs: 0, jawOpen: 0 }));
         }
+      } catch (error) {
+        console.warn("Face frame processing failed", error);
+        void recover(error);
+      } finally {
+        // Unlike rAF-only loops this still attempts inference in background tabs.
+        if (!cancelled && !failed) timer.current = setTimeout(loop, 80);
       }
-      raf.current = requestAnimationFrame(loop);
     }
-
+    const watchdog = setInterval(() => {
+      if (!cancelled && !failed && engine && !recovering && performance.now() - (lastSuccess || engineStarted) > 5000) {
+        setStatus("tracking-paused"); clearTracking("stale");
+        setError("Camera frames or face processing paused. Return to this tab or click Retry face detection. Away timer and fatigue scoring are paused.");
+      }
+    }, 1000);
     boot();
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf.current);
+      cancelled = true; controller.abort();
+      clearTimeout(timer.current); clearInterval(watchdog); closeEngine();
+      ownedStream?.getTracks().forEach(t => t.stop());
+      if (videoRef.current?.srcObject === ownedStream) videoRef.current.srcObject = null;
     };
+    // Each retry owns its engine/stream; late startup cannot overwrite a newer retry.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, retryToken]);
 
