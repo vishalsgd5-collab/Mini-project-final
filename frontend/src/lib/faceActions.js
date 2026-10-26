@@ -5,7 +5,7 @@ import { YawnDetector } from "./yawn.js";
 const LABELS = {
   blink: "Blink",
   microsleep: "Microsleep (eyes shut >1s)",
-  yawn: "Yawn",
+  yawn: "Yawn candidate",
   lookAway: "Gaze off screen",
   headDrop: "Head dropping",
   squint: "Squinting",
@@ -31,10 +31,10 @@ export class FaceActionTracker {
     this.lastPitch = 0;
   }
 
-  push({ closed, blinked, mar, pitch, yaw, blends = {}, now = performance.now() }) {
+  push({ closed, blinked, mar, pitch, yaw, blends = {}, speaking = false, now = performance.now() }) {
     const fresh = [];
     const squint = ((blends.eyeSquintLeft || 0) + (blends.eyeSquintRight || 0)) / 2;
-    const jaw = blends.jawOpen || 0;
+    const jaw = blends.jawOpen;
     const lookDown = ((blends.eyeLookDownLeft || 0) + (blends.eyeLookDownRight || 0)) / 2;
 
     if (blinked) {
@@ -54,7 +54,7 @@ export class FaceActionTracker {
       this.fired.microsleep = false;
     }
 
-    const yawn = this.yawnDetector.push(mar, jaw, now);
+    const yawn = this.yawnDetector.push(mar, jaw, now, { speaking });
     if (yawn.detected) {
       this.counts.yawn = yawn.count;
       fresh.push("yawn");

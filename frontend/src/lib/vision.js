@@ -175,7 +175,7 @@ export class BlinkTracker {
 
 /** Compatibility adapter: all yawn counting uses the same sustained detector. */
 export class YawnTracker extends YawnDetector {
-  push(mar, now = performance.now(), jaw = 0) {
+  push(mar, now = performance.now(), jaw) {
     return super.push(mar, jaw, now).recentCount;
   }
 }

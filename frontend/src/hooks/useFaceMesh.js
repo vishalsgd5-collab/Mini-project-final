@@ -143,7 +143,9 @@ async function loadLandmarker() {
   }
 }
 
-export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false }) {
+export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glassesMode = false, speakingMode = false }) {
+  const speakingRef = useRef(speakingMode);
+  speakingRef.current = speakingMode;
   const glassesRef = useRef(glassesMode);
   glassesRef.current = glassesMode;
   const [status, setStatus] = useState("idle");
@@ -286,6 +288,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             pitch: pose.pitch,
             yaw: pose.yaw,
             blends,
+            speaking: speakingRef.current,
             now,
           });
           if (ctx) {
@@ -319,6 +322,8 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
             yawns: actions.yawn.recentCount,
             jawOpen: blends.jawOpen || 0,
             yawnActive: actions.yawn.active,
+            yawnStatus: actions.yawn.status,
+            scoringMar: actions.yawn.scoringMar,
             yawnPending: actions.yawn.pending,
             mouthOpenMs: actions.yawn.openMs,
             slouch: slouchFromPose(pose.pitch, pose.roll),
@@ -338,7 +343,7 @@ export function useFaceMesh({ videoRef, canvasRef, enabled, retryToken = 0, glas
         } else {
           actor.current.yawnDetector.resetCandidate();
           if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-          setLive((s) => ({ ...s, present: false, yawnActive: false, yawnPending: false, mouthOpenMs: 0, jawOpen: 0 }));
+          setLive((s) => ({ ...s, present: false, yawnActive: false, yawnPending: false, yawnStatus: "unavailable", scoringMar: 0.05, mouthOpenMs: 0, jawOpen: 0 }));
         }
       }
       raf.current = requestAnimationFrame(loop);
