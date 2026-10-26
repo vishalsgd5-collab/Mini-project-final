@@ -63,6 +63,11 @@ class FeatureIn(BaseModel):
     posture_slouch: float = 0.15
     look_away_ratio: float = 0.05
     session_id: int | None = None
+    personal_activity: bool = False
+    behavioral_ready: bool = False
+    behavioral_score: float = Field(default=0, ge=0, le=100, allow_inf_nan=False)
+    typing_slowdown: float = Field(default=0, ge=0, le=1, allow_inf_nan=False)
+    mouse_slowdown: float = Field(default=0, ge=0, le=1, allow_inf_nan=False)
 
 
 class InterventionOut(BaseModel):
@@ -77,6 +82,7 @@ class InterventionOut(BaseModel):
 
 
 class PredictOut(BaseModel):
+    activity_adjustment: float = 0
     fatigue_score: float
     level: str
     confidence: float

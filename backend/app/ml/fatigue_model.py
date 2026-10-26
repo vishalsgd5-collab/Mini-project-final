@@ -7,6 +7,7 @@ import numpy as np
 
 from ..config import ARTIFACTS_DIR, FEATURE_COLUMNS, score_to_level
 from .train import train
+from .activity import activity_adjustment, activity_driver, model_payload
 
 _model = None
 _metrics: dict = {}
@@ -118,7 +119,7 @@ def _drivers(payload: dict, score: float) -> list[dict]:
 
     idle = float(payload.get("idle_ratio") or 0)
     typing = float(payload.get("typing_rpm") or 0)
-    if idle > 0.4 and typing < 80:
+    if not payload.get("personal_activity") and idle > 0.4 and typing < 80:
         items.append(
             {
                 "key": "cognition",
@@ -140,6 +141,9 @@ def _drivers(payload: dict, score: float) -> list[dict]:
             }
         )
 
+    personal_driver = activity_driver(payload)
+    if personal_driver:
+        items.append(personal_driver)
     items.sort(key=lambda d: d["weight"], reverse=True)
     if not items:
         items.append(
@@ -155,9 +159,10 @@ def _drivers(payload: dict, score: float) -> list[dict]:
 
 def predict_fatigue(payload: dict) -> dict:
     model = get_model()
-    X = features_to_array(payload)
+    X = features_to_array(model_payload(payload))
     raw = float(model.predict(X)[0])
-    score = float(np.clip(raw, 0, 100))
+    adjustment = activity_adjustment(payload)
+    score = float(np.clip(raw + adjustment, 0, 100))
     level = score_to_level(score)
     # Confidence shrinks when inputs are extreme / sparse
     ear = float(payload.get("avg_ear") or 0)
@@ -169,4 +174,5 @@ def predict_fatigue(payload: dict) -> dict:
         "confidence": round(confidence, 2),
         "drivers": _drivers(payload, score),
         "metrics": _metrics,
+        "activity_adjustment": adjustment,
     }

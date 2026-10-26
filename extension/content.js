@@ -1,30 +1,46 @@
 (function () {
-  const keyTimes = [];
   let hud = null;
-
-  window.addEventListener(
-    "keydown",
-    () => {
-      const now = Date.now();
-      keyTimes.push(now);
-      while (keyTimes.length && now - keyTimes[0] > 60000) keyTimes.shift();
-      const rpm = keyTimes.length;
-      const wpm = Math.round(rpm / 5);
-      try {
-        chrome.runtime.sendMessage({ type: "AURA_TYPING", rpm, wpm });
-      } catch {
-        /* ignore */
+  let activityPrefs = { enabled: false, keyboard: false, mouse: false };
+  const sampler = new AuraActivitySampler.InputSampler();
+  const focused = () => !document.hidden && document.hasFocus();
+  const capturing = () => activityPrefs.enabled && activityPrefs.expiresAt > Date.now();
+  window.addEventListener("keydown", e => {
+    if (capturing() && activityPrefs.keyboard && focused()) sampler.key(e);
+  }, true);
+  window.addEventListener("mousemove", e => {
+    if (capturing() && activityPrefs.mouse && focused()) sampler.move(e);
+  }, { passive: true });
+  const resetSampler = () => sampler.reset(Date.now());
+  window.addEventListener("blur", resetSampler);
+  window.addEventListener("focus", resetSampler);
+  document.addEventListener("visibilitychange", resetSampler);
+  const updatePrefs = prefs => {
+    const next = { enabled: prefs?.enabled === true, keyboard: prefs?.keyboard === true, mouse: prefs?.mouse === true,
+      expiresAt: Number(prefs?.expiresAt) || 0 };
+    if (["enabled", "keyboard", "mouse"].some(key => next[key] !== activityPrefs[key])) resetSampler();
+    activityPrefs = next;
+  };
+  try {
+    chrome.runtime.sendMessage({ type: "AURA_ACTIVITY_GET_PREFS" }, reply => {
+      if (!chrome.runtime.lastError) {
+        updatePrefs(reply?.prefs);
+        window.postMessage({ type: "AURA_ACTIVITY_READY" }, window.location.origin);
       }
-      window.postMessage({ type: "AURA_TYPING", rpm, wpm }, "*");
-    },
-    true
-  );
+    });
+  } catch { /* unloaded extension */ }
+  setInterval(() => {
+    const sample = sampler.sample();
+    if (!capturing() || !focused() || !sample) return;
+    try { chrome.runtime.sendMessage({ type: "AURA_ACTIVITY_SAMPLE", sample }, () => { void chrome.runtime.lastError; }); }
+    catch { /* extension reloaded */ }
+  }, 1000);
 
   window.addEventListener("message", (event) => {
     if (event.source !== window) return;
     const data = event.data;
     if (!data || !data.type) return;
     if (
+      data.type === "AURA_ACTIVITY_PREFS" ||
       data.type === "AURA_AUDIO_SETTINGS" ||
       data.type === "AURA_SCHEDULE_SYNC" ||
       data.type === "AURA_RITUAL" ||
@@ -46,6 +62,8 @@
   });
 
   chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "AURA_ACTIVITY_PREFS") updatePrefs(msg.prefs);
+    if (msg?.type === "AURA_ACTIVITY") window.postMessage(msg, window.location.origin);
     if (msg?.type === "AURA_SCHEDULE_ACK") {
       window.postMessage(msg, window.location.origin);
     }

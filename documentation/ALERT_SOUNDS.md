@@ -11,7 +11,7 @@ Sounds: **Soft double beep, Bright triple beep, Digital pulse, Rising alert, Gla
 
 The saved choice applies to fatigue beeps, ritual chimes and Ember Docket reminder sounds. It does **not** change fatigue thresholds, yawn detection or reminder dates. F8 still mutes fatigue/ritual/reminder audio without disabling desktop notifications. The independent five-minute no-face alarm keeps its recognizable fixed tone, ignores F8, and repeats until **Stop alarm**. Its volume still follows the saved volume setting.
 
-## Guardian 1.4.0
+## Guardian 1.5.0 (current)
 
 Download the updated project, open `chrome://extensions`, enable Developer mode, and **Load unpacked** the `extension` folder. If Guardian is already installed from that folder, click **Reload** after replacing its files. **Refresh the AURA tab and other existing website tabs** so their content scripts are updated. Click in AURA once, then select a sound. The browser sends the saved sound ID, volume and mute state to Guardian, which persists them in `chrome.storage.local` for future scheduled reminders, including when the AURA tab is closed.
 

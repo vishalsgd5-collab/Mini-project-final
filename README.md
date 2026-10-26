@@ -115,4 +115,10 @@ See `docs/TECHNICAL.md` for landmark indices, feature definitions and the reward
 
 AURA now includes **eight selectable beep sounds** with **Preview**, **Use sound**, **Stop preview**, and a saved **15–100% volume slider**. Open **Studio settings → Beep sound**, or expand the sound section in the Aura Monitor. Your choice saves automatically in this browser and is used for fatigue alerts, ritual chimes and scheduled reminders. F8 mute and the separate manually stopped away alarm are preserved.
 
-For cross-website/background reminders, update **AURA Guardian to 1.4.0**, reload it in `chrome://extensions`, refresh your tabs, and choose a sound in AURA. See [sound settings and Guardian instructions](documentation/ALERT_SOUNDS.md). The [standalone eight-sound listening page](docs/beep-options.html) lets you compare/download tones; save your preference inside the complete app.
+For cross-website/background reminders, update **AURA Guardian to 1.5.0**, reload it in `chrome://extensions`, refresh your tabs, and choose a sound in AURA. See [sound settings and Guardian instructions](documentation/ALERT_SOUNDS.md). The [standalone eight-sound listening page](docs/beep-options.html) lets you compare/download tones; save your preference inside the complete app.
+
+## Personal starting-pace comparison
+
+The Monitor now learns your **first 60 active seconds** of typing and mouse movement separately, then freezes those session baselines. A **>15% slowdown sustained for 30 seconds**, with sufficient recent input, contributes **up to 20 points** to the combined fatigue score. Idle reading and unused input channels do not count as personal slowdown. See starting/current pace, calibration progress and the contribution under **Your personal work pace**; use **Restart pace baseline** for a new task.
+
+Typing is no longer double-counted, and mouse speed uses **pixels per moving second**, not mouse-event frequency. Update/reload **Guardian 1.5.0** for numeric input activity from other supported websites while the Monitor stays open. Native Windows-app input is outside browser-extension access. See [measurement, score formula, privacy and limitations](documentation/PERSONAL_WORK_PACE.md).

@@ -1,3 +1,5 @@
+import PersonalPaceCard from "../components/PersonalPaceCard";
+import { activityPayload } from "../lib/activity.js";
 import SoundPicker from "../components/SoundPicker";
 import { yawnStatusLabel } from "../lib/yawn";
 import { useEffect, useRef, useState } from "react";
@@ -64,7 +66,7 @@ export default function Monitor() {
   });
   const labLive = useLabLive(running && status === "lab");
   const live = status === "lab" ? labLive : camLive;
-  const activity = useActivity(running && user?.enable_keyboard !== false);
+  const activity = useActivity(running, { keyboard: user?.enable_keyboard !== false, mouse: user?.enable_mouse !== false });
   const [sessionId, setSessionId] = useState(null);
   const [pred, setPred] = useState(null);
   const [offer, setOffer] = useState(null);
@@ -73,7 +75,6 @@ export default function Monitor() {
   const [alertState, setAlertState] = useState(
     typeof Notification !== "undefined" ? Notification.permission : "denied"
   );
-  const [extTyping, setExtTyping] = useState({ wpm: 0, rpm: 0 });
   const [sound, setSound] = useState(isSoundOn());
   const [hint, setHint] = useState("");
   const [flash, setFlash] = useState(false);
@@ -153,12 +154,6 @@ export default function Monitor() {
       if (!document.hidden) wake();
     };
     document.addEventListener("visibilitychange", onVis);
-    const onTypeMsg = (e) => {
-      if (e.data?.type === "AURA_TYPING") {
-        setExtTyping({ wpm: e.data.wpm || 0, rpm: e.data.rpm || 0 });
-      }
-    };
-    window.addEventListener("message", onTypeMsg);
     const flash = (msg) => {
       setHint(msg);
       window.setTimeout(() => setHint(""), 2200);
@@ -194,7 +189,6 @@ export default function Monitor() {
     startedAt.current = performance.now();
     return () => {
       document.removeEventListener("visibilitychange", onVis);
-      window.removeEventListener("message", onTypeMsg);
       window.removeEventListener("keydown", onKey);
       try {
         lock?.release?.();
@@ -308,6 +302,7 @@ export default function Monitor() {
           head_roll: snapshot.roll,
           mar: snapshot.scoringMar ?? 0.05,
           yawn_count: snapshot.yawns,
+          ...activityPayload(act),
           typing_rpm: user?.enable_keyboard === false ? 0 : act.typingRpm,
           mouse_intensity: user?.enable_mouse === false ? 0 : act.mouseIntensity,
           idle_ratio: act.idleRatio,
@@ -509,6 +504,7 @@ export default function Monitor() {
       </div>
 
       <SoundPicker compact />
+      <PersonalPaceCard activity={activity} running={running} keyboard={user?.enable_keyboard !== false} mouse={user?.enable_mouse !== false} adjustment={pred?.activity_adjustment || 0} />
 
       {alertState !== "granted" && (
         <div className="card" style={{ marginBottom: 14, borderColor: "var(--gold)" }}>
@@ -632,8 +628,9 @@ export default function Monitor() {
             <div className="metric"><small>Your open EAR</small><b>{(live?.openBaseline || 0).toFixed(2)}</b></div>
             <div className="metric"><small>Head pitch</small><b>{(live?.pitch || 0).toFixed(0)}°</b></div>
             <div className="metric"><small>Slouch</small><b>{(((live?.slouch || 0) * 100).toFixed(0))}%</b></div>
-            <div className="metric"><small>Typing speed</small><b>{Math.max(activity.typingWpm || 0, extTyping.wpm || 0)} WPM</b></div>
-            <div className="metric"><small>Keys / min</small><b>{Math.max(activity.typingRpm || 0, extTyping.rpm || 0)}</b></div>
+            <div className="metric"><small>Typing speed</small><b>{activity.typingWpm || 0} WPM</b></div>
+            <div className="metric"><small>Keys / min</small><b>{activity.typingRpm || 0}</b></div>
+            <div className="metric"><small>Mouse speed (moving)</small><b>{Math.round(activity.mouseSpeed || 0)} px/s</b></div>
             <div className="metric"><small>Session</small><b>{(((performance.now() - startedAt.current) / 60000).toFixed(0))}m</b></div>
             <div className="metric"><small>Beep (F8)</small><b>{sound ? "ON" : "MUTE"}</b></div>
             <div className="metric"><small>Attention</small><b>{live?.attention ?? "—"}</b></div>

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AURA Guardian",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Carries AURA fatigue detection, beeps, and rituals onto every website and as desktop toasts over other apps.",
   "permissions": ["notifications", "storage", "tabs", "alarms", "offscreen"],
   "host_permissions": ["<all_urls>"],
@@ -15,7 +15,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": ["activity-sampler.js", "content.js"],
       "css": ["content.css"],
       "run_at": "document_idle",
       "all_frames": false

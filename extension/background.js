@@ -60,6 +60,43 @@ function broadcast(msg) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg?.type) return false;
 
+  if (msg.type === "AURA_ACTIVITY_PREFS") {
+    if (!trustedScheduleSender(_sender.url)) { sendResponse({ ok: false }); return false; }
+    const prefs = { enabled: msg.enabled === true, keyboard: msg.keyboard === true, mouse: msg.mouse === true, expiresAt: Date.now() + 90000 };
+    chrome.storage.local.set({ auraActivityPrefs: prefs }).then(() => {
+      broadcast({ type: "AURA_ACTIVITY_PREFS", prefs });
+      sendResponse({ ok: true });
+    }).catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (msg.type === "AURA_ACTIVITY_GET_PREFS") {
+    chrome.storage.local.get("auraActivityPrefs").then(({ auraActivityPrefs }) => sendResponse({ prefs: auraActivityPrefs || {} }));
+    return true;
+  }
+  if (msg.type === "AURA_ACTIVITY_SAMPLE") {
+    const s = msg.sample;
+    if (!Number.isInteger(_sender.tab?.id) || _sender.tab.active === false || !s ||
+        ![s.at, s.dt, s.keys, s.mouseDistance, s.mouseMs].every(Number.isFinite) ||
+        Math.abs(Date.now() - s.at) > 4000 || s.dt <= 0 || s.dt > 2500) {
+      sendResponse({ ok: false }); return false;
+    }
+    chrome.storage.local.get("auraActivityPrefs").then(({ auraActivityPrefs: prefs = {} }) => {
+      if (!prefs.enabled || prefs.expiresAt <= Date.now()) { sendResponse({ ok: false }); return; }
+      const sample = { at: s.at, dt: s.dt,
+        keys: prefs.keyboard ? Math.max(0, Math.min(100, s.keys)) : 0,
+        mouseDistance: prefs.mouse ? Math.max(0, Math.min(100000, s.mouseDistance)) : 0,
+        mouseMs: prefs.mouse ? Math.max(0, Math.min(s.dt, s.mouseMs)) : 0 };
+      // Do not expose cross-site activity totals to arbitrary website pages.
+      chrome.tabs.query({}, tabs => {
+        for (const tab of tabs) if (tab.id && trustedScheduleSender(tab.url)) {
+          chrome.tabs.sendMessage(tab.id, { type: "AURA_ACTIVITY", sample }, () => { void chrome.runtime.lastError; });
+        }
+      });
+      sendResponse({ ok: true });
+    });
+    return true;
+  }
+
   if (msg.type === "AURA_AUDIO_SETTINGS") {
     if (!trustedScheduleSender(_sender.url)) { sendResponse({ ok: false }); return false; }
     enqueueAudio(async () => {

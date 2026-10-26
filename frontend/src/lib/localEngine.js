@@ -1,3 +1,4 @@
+import { activityAdjustment } from "./activity.js";
 /** In-browser stand-in for FastAPI + LightGBM + LinUCB (used on GitHub Pages). */
 
 const CATALOG = [
@@ -81,7 +82,7 @@ function predict(f) {
   const ear = Number(f.avg_ear || 0.28);
   const pitch = Number(f.head_pitch || -4);
   const slouch = Number(f.posture_slouch || 0.15);
-  const idle = Number(f.idle_ratio || 0.1);
+  const idle = f.personal_activity === true ? .1 : Number(f.idle_ratio ?? .1);
   const screen = Number(f.continuous_screen_min || 15);
   const hour = Number(f.hour_of_day || 12);
   const yawns = Number(f.yawn_count || 0);
@@ -100,16 +101,18 @@ function predict(f) {
     8 * clamp(yawns / 4, 0, 1) +
     6 * clamp(mar - 0.15, 0, 1) +
     (8 * afternoon + 12 * late) * 0.35;
-  const score = +clamp(y, 0, 100).toFixed(1);
+  const adjustment = activityAdjustment(f);
+  const score = +clamp(y + adjustment, 0, 100).toFixed(1);
   const drivers = [];
   if (perclos > 0.12) drivers.push({ key: "perclos", label: "Eyelid closure time", detail: `PERCLOS ${(perclos * 100).toFixed(0)}% — lids lingering shut`, weight: clamp((perclos - 0.08) / 0.35, 0, 1) });
   if (ear < 0.24) drivers.push({ key: "ear", label: "Drooping eyelids", detail: `Eye aspect ratio ${ear.toFixed(2)} (alert ~0.28–0.32)`, weight: clamp((0.28 - ear) / 0.12, 0, 1) });
   if (blink < 11) drivers.push({ key: "blink", label: "Suppressed blink rate", detail: `${blink.toFixed(0)} blinks/min — typical rest is 15–20`, weight: clamp((12 - blink) / 9, 0, 1) });
   if (pitch < -10) drivers.push({ key: "posture", label: "Head pitching forward", detail: `Pitch ${pitch.toFixed(0)}° — cervical slump`, weight: clamp((-pitch - 8) / 24, 0, 1) });
   if (screen > 30) drivers.push({ key: "screen", label: "Unbroken screen time", detail: `${screen.toFixed(0)} minutes without a real pause`, weight: clamp((screen - 25) / 90, 0, 1) });
+  if (adjustment > 0) drivers.push({ key: "personal_pace", label: "Slower than your starting pace", detail: `Sustained personal typing/mouse slowdown: +${adjustment.toFixed(1)} score points (maximum 20).`, weight: adjustment / 20 });
   if (!drivers.length) drivers.push({ key: "stable", label: "Signals look stable", detail: "Blink, posture and cadence are within a fresh range", weight: 0.15 });
   drivers.sort((a, b) => b.weight - a.weight);
-  return { fatigue_score: score, level: levelOf(score), confidence: 0.78, drivers: drivers.slice(0, 4) };
+  return { fatigue_score: score, level: levelOf(score), confidence: 0.78, drivers: drivers.slice(0, 4), activity_adjustment: adjustment };
 }
 
 function pickArm(f, score) {

@@ -55,7 +55,9 @@ def test_synthesize_bounds():
     assert y.min() >= 0 and y.max() <= 100
 
 
-def test_train_smoke():
+def test_train_smoke(tmp_path, monkeypatch):
+    # Smoke training must not overwrite the project's published model metrics.
+    monkeypatch.setattr("app.ml.train.ARTIFACTS_DIR", tmp_path)
     metrics = train(n=800)
     assert metrics["mae"] < 12
     assert "blink_rate" in metrics["importances"]

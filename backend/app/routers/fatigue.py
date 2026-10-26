@@ -121,6 +121,7 @@ def predict(body: FeatureIn, user: User = Depends(get_current_user), db: Session
         }
 
     return PredictOut(
+        activity_adjustment=result.get("activity_adjustment", 0),
         fatigue_score=result["fatigue_score"],
         level=result["level"],
         confidence=result["confidence"],
